@@ -189,7 +189,19 @@ async function run() {
   const reset = await send('admin/users/' + id + '/reset', { method: 'POST', cookie: admin });
   await send('documents', { cookie: changed, status: 401 });
   await send('auth/login', { method: 'POST', body: { nik, password: reset.body.temporaryPassword } });
-  console.log('Lulus admin, penugasan, ganti password wajib, lockout, dan reset sesi.');
+
+  const randNik = () => String(Math.floor(10_000_000 + Math.random() * 90_000_000)).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1.$2.$3');
+  await send('admin/users', { method: 'POST', cookie: admin,
+    body: { nik: randNik(), nama: 'Tanpa Unit', peran: 'MANAJER', unit_ids: [] }, status: 422 });
+  const { body: { id: directCoordId } } = await send('admin/users', { method: 'POST', cookie: admin,
+    body: { nik: randNik(), nama: 'Koor Langsung ' + suffix, peran: 'KOORDINATOR', unit_ids: ['u-21', 'u-32'] } });
+  const { body: { items: directAssignments } } = await send('admin/assignments', { cookie: admin });
+  assert.deepEqual(
+    directAssignments.filter((a) => a.user_id === directCoordId && a.is_active && a.peran === 'KOORDINATOR')
+      .map((a) => a.unit_id).sort(),
+    ['u-21', 'u-32'],
+  );
+  console.log('Lulus admin, penugasan langsung saat tambah pengguna, ganti password wajib, lockout, dan reset sesi.');
 }
 
 try {

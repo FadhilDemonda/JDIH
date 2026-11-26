@@ -345,10 +345,33 @@ async function admin(data, user, method, parts, input) {
       const nama = textField(input.nama, 'Nama pengguna', 180);
       const password = input.password || 'Aa1-' + randomBytes(12).toString('base64url');
       validPassword(password);
-      const profile = { id: randomUUID(), nik: input.nik, nama, unit_home: 'Staf RS',
-        is_active: true, is_super_admin: input.is_super_admin === true,
+      const peran = input.peran;
+      if (peran !== undefined) {
+        invalid(['STAF', 'KOORDINATOR', 'MANAJER', 'SUPER_ADMIN'].includes(peran), 'Peran pengguna tidak valid.');
+      }
+      const isSuperAdmin = input.is_super_admin === true || peran === 'SUPER_ADMIN';
+      const needsUnits = peran === 'KOORDINATOR' || peran === 'MANAJER';
+      let assignedUnits = [];
+      if (needsUnits) {
+        invalid(Array.isArray(input.unit_ids) && input.unit_ids.length >= 1 && input.unit_ids.length <= 50,
+          'Pilih minimal satu unit kerja untuk peran ' + (peran === 'KOORDINATOR' ? 'Koordinator/SPV' : 'Manajer') + '.');
+        const uniqueIds = Array.from(new Set(input.unit_ids));
+        assignedUnits = uniqueIds.map((unitId) => {
+          const unit = find(data.units, unitId, 'Unit');
+          invalid(unit.is_active, 'Unit tidak aktif.');
+          return unit;
+        });
+      }
+      const unitHome = typeof input.unit_home === 'string' && input.unit_home.trim()
+        ? textField(input.unit_home, 'Unit utama', 160)
+        : (assignedUnits.length ? assignedUnits.map((unit) => unit.nama).join(', ').slice(0, 160) : 'Staf RS');
+      const profile = { id: randomUUID(), nik: input.nik, nama, unit_home: unitHome,
+        is_active: true, is_super_admin: isSuperAdmin,
         must_change_password: true, password_hash: await bcrypt.hash(password, 12) };
       list.push(profile);
+      for (const unit of assignedUnits) {
+        data.userUnits.push({ id: randomUUID(), user_id: profile.id, unit_id: unit.id, peran, is_active: true });
+      }
       return { id: profile.id, temporaryPassword: password };
     }
     if (method === 'POST' && parts[2] === 'reset') {

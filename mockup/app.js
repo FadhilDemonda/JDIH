@@ -564,12 +564,14 @@
   }
 
   function openDialog({ title, bodyHtml, confirmLabel = 'Ya, Lanjutkan', confirmTone = 'primary',
-    requireNote = false, noteOptional = false, noteMaxLength = 4000, noteLabel = 'Catatan', notePlaceholder = '', noteValue = '' }) {
+    requireNote = false, noteOptional = false, noteMaxLength = 4000, noteLabel = 'Catatan', notePlaceholder = '', noteValue = '',
+    onOpen = null, validate = null, wide = false }) {
     const dialog = document.getElementById('confirm-dialog');
     const titleEl = document.getElementById('confirm-dialog-title');
     const bodyEl = document.getElementById('confirm-dialog-body');
     const footerEl = document.getElementById('confirm-dialog-footer');
 
+    dialog.classList.toggle('dialog-wide', Boolean(wide));
     titleEl.textContent = title;
     bodyEl.innerHTML = bodyHtml + (requireNote ? `
       <div class="field" style="margin-top:14px;">
@@ -586,6 +588,7 @@
 
     return new Promise((resolve) => {
       function cleanup(val) {
+        dialog.classList.remove('dialog-wide');
         dialog.close();
         resolve(val);
       }
@@ -612,10 +615,17 @@
           cleanup({ confirmed: true, note: val });
           return;
         }
+        if (typeof validate === 'function') {
+          const extra = validate(dialog);
+          if (!extra) return;
+          cleanup(typeof extra === 'object' ? { confirmed: true, ...extra } : { confirmed: true });
+          return;
+        }
         cleanup({ confirmed: true });
       };
 
       dialog.showModal();
+      if (typeof onOpen === 'function') onOpen(dialog);
     });
   }
 
@@ -3641,34 +3651,129 @@
     };
 
     document.getElementById('add-user-btn').onclick = async () => {
+      const activeUnits = state.units.filter((u) => u.is_active);
       const res = await openDialog({
         title: 'Tambah Pengguna Baru',
+        wide: true,
         bodyHtml: `
           <div class="field-grid">
-            <div class="field col-5"><label for="nu-nik">NIK (0000.00.00)</label><input id="nu-nik" class="input tabular" placeholder="1995.03.11"></div>
-            <div class="field col-7"><label for="nu-nama">Nama Lengkap & Gelar</label><input id="nu-nama" class="input" placeholder="Ns. Sari Indah, S.Kep"></div>
-            ${live ? '<div class="field col-12"><label for="nu-password">Password awal (kosongkan untuk dibuat otomatis)</label><input id="nu-password" type="password" class="input" autocomplete="new-password"></div><div class="field col-12"><label><input type="checkbox" id="nu-admin"> Super Admin</label></div>' : ''}
+            <div class="field col-5"><label for="nu-nik">NIK (0000.00.00) <span class="req-mark">*</span></label><input id="nu-nik" class="input tabular" placeholder="1995.03.11"></div>
+            <div class="field col-7"><label for="nu-nama">Nama Lengkap &amp; Gelar <span class="req-mark">*</span></label><input id="nu-nama" class="input" placeholder="Ns. Sari Indah, S.Kep"></div>
+            ${live ? '<div class="field col-12"><label for="nu-password">Password awal (kosongkan untuk dibuat otomatis)</label><input id="nu-password" type="password" class="input" autocomplete="new-password"></div>' : ''}
+            <div class="field col-12">
+              <label for="nu-role">Peran Pengguna <span class="req-mark">*</span></label>
+              <select id="nu-role" class="select">
+                <option value="STAF">Staf (baca seluruh dokumen terbit)</option>
+                <option value="KOORDINATOR">Koordinator / SPV (susun &amp; ajukan dokumen unit)</option>
+                <option value="MANAJER">Manajer (verifikasi &amp; terbitkan dokumen unit)</option>
+                <option value="SUPER_ADMIN">Super Admin (akses penuh sistem)</option>
+              </select>
+            </div>
+            <div class="field col-12" id="nu-home-wrap">
+              <label for="nu-home-unit">Unit Utama (opsional)</label>
+              <select id="nu-home-unit" class="select">
+                <option value="">Staf RS (Umum)</option>
+                ${activeUnits.map((u) => `<option value="${esc(u.nama)}">${esc(u.kode)} - ${esc(u.nama)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field col-12" id="nu-units-wrap" hidden>
+              <label for="nu-unit-filter">Penugasan Unit Kerja <span class="req-mark">*</span></label>
+              <input id="nu-unit-filter" type="search" class="input" placeholder="Cari nama atau kode unit...">
+              <div class="unit-checklist" role="group" aria-label="Pilih unit kerja">
+                ${activeUnits.map((u) => `
+                  <label class="unit-check-item" data-unit-label="${esc((u.kode + ' ' + u.nama).toLowerCase())}">
+                    <input type="checkbox" name="nu-unit" value="${esc(u.id)}">
+                    <span><strong>${esc(u.kode)}</strong> - ${esc(u.nama)}</span>
+                  </label>
+                `).join('')}
+              </div>
+              <p class="field-help">Pilih satu atau lebih unit yang dikelola oleh pengguna ini.</p>
+            </div>
+            <p id="nu-form-error" class="field-error col-12" hidden></p>
           </div>
         `,
         confirmLabel: 'Simpan Pengguna',
+        onOpen: (dialog) => {
+          enhanceSelects(dialog);
+          const nikEl = dialog.querySelector('#nu-nik');
+          const roleEl = dialog.querySelector('#nu-role');
+          const homeWrap = dialog.querySelector('#nu-home-wrap');
+          const unitsWrap = dialog.querySelector('#nu-units-wrap');
+          const unitFilter = dialog.querySelector('#nu-unit-filter');
+          const errEl = dialog.querySelector('#nu-form-error');
+          nikEl.oninput = (e) => {
+            e.target.value = formatNikInput(e.target.value);
+            errEl.hidden = true;
+          };
+          roleEl.onchange = () => {
+            const isUnitRole = ['KOORDINATOR', 'MANAJER'].includes(roleEl.value);
+            unitsWrap.hidden = !isUnitRole;
+            homeWrap.hidden = isUnitRole;
+            errEl.hidden = true;
+          };
+          unitFilter.oninput = () => {
+            const q = unitFilter.value.trim().toLowerCase();
+            dialog.querySelectorAll('.unit-check-item').forEach((row) => {
+              row.hidden = Boolean(q && !row.dataset.unitLabel.includes(q));
+            });
+          };
+        },
+        validate: (dialog) => {
+          const errEl = dialog.querySelector('#nu-form-error');
+          const showErr = (msg) => {
+            errEl.textContent = msg;
+            errEl.hidden = false;
+            return null;
+          };
+          const nik = formatNikInput(dialog.querySelector('#nu-nik')?.value || '');
+          const nama = (dialog.querySelector('#nu-nama')?.value || '').trim();
+          const password = dialog.querySelector('#nu-password')?.value || '';
+          const peran = dialog.querySelector('#nu-role')?.value || 'STAF';
+          const unitIds = Array.from(dialog.querySelectorAll('input[name="nu-unit"]:checked')).map((el) => el.value);
+          const unitHome = dialog.querySelector('#nu-home-unit')?.value || '';
+          if (!isValidNik(nik) || !nama) return showErr('Format NIK harus 0000.00.00 dan nama wajib diisi.');
+          if (state.users.some((u) => u.nik === nik)) return showErr('NIK sudah terdaftar.');
+          if (live && password && (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password))) {
+            return showErr('Password minimal 8 karakter kombinasi huruf dan angka.');
+          }
+          if (['KOORDINATOR', 'MANAJER'].includes(peran) && unitIds.length === 0) {
+            return showErr('Pilih minimal satu unit kerja untuk peran ' + (peran === 'KOORDINATOR' ? 'Koordinator/SPV' : 'Manajer') + '.');
+          }
+          errEl.hidden = true;
+          return { nik, nama, password, peran, unitIds, unitHome };
+        },
       });
       if (!res) return;
-      const nik = formatNikInput(document.getElementById('nu-nik')?.value || '');
-      const nama = (document.getElementById('nu-nama')?.value || '').trim();
-      if (!isValidNik(nik) || !nama) {
-        showToast('Format NIK harus 0000.00.00 dan nama wajib diisi.', 'error');
-        return;
+      if (live) {
+        return writeAction('admin/users', 'POST', {
+          nik: res.nik,
+          nama: res.nama,
+          password: res.password,
+          peran: res.peran,
+          is_super_admin: res.peran === 'SUPER_ADMIN',
+          unit_ids: res.unitIds,
+          unit_home: res.unitHome,
+        }, 'Pengguna tersimpan.', showTemporaryPassword);
       }
-      if (state.users.some((u) => u.nik === nik)) {
-        showToast('NIK sudah terdaftar', 'error');
-        return;
+      const userId = `usr-${Date.now()}`;
+      const assignedNames = res.unitIds.map((uid) => getUnit(uid)?.nama).filter(Boolean);
+      state.users.push({
+        id: userId,
+        nik: res.nik,
+        nama: res.nama,
+        unit_home: res.unitHome || (assignedNames.length ? assignedNames.join(', ') : 'Staf RS'),
+        is_super_admin: res.peran === 'SUPER_ADMIN',
+        is_active: true,
+        must_change_password: true,
+        failed_login: 0,
+        locked_until: null,
+      });
+      if (['KOORDINATOR', 'MANAJER'].includes(res.peran)) {
+        res.unitIds.forEach((unitId, idx) => {
+          state.userUnits.push({ id: `uu-${Date.now()}-${idx}`, user_id: userId, unit_id: unitId, peran: res.peran, is_active: true });
+        });
       }
-      if (live) return writeAction('admin/users', 'POST', {
-        nik, nama, password: document.getElementById('nu-password').value,
-        is_super_admin: document.getElementById('nu-admin').checked,
-      }, 'Pengguna tersimpan.', showTemporaryPassword);
-      state.users.push({ id: `usr-${Date.now()}`, nik, nama, unit_home: 'Staf RS', is_super_admin: false, is_active: true, must_change_password: true, failed_login: 0, locked_until: null });
-      showToast(`Pengguna ${nama} (${nik}) tersimpan.`, 'success');
+      showToast(`Pengguna ${res.nama} (${res.nik}) tersimpan.`, 'success');
       viewAdminPengguna();
     };
 
