@@ -78,6 +78,9 @@
   --paper-marker: #FFE28A;
 
   --stage-bg: #175734;
+  --folder-light: #63A97E;
+  --folder-dark: #255E41;
+  --sheet-edge: #CCD8D0;
   --stage-card-bg: #144A2C;
   --stage-card-active-bg: #FFFFFF;
   --stage-card-border: rgba(255, 255, 255, 0.22);
@@ -918,7 +921,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
+  min-height: 32px;
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--text-primary);
@@ -926,8 +929,9 @@ body {
 }
 
 .checkbox-row input {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
+  margin: 0;
   cursor: pointer;
 }
 
@@ -977,9 +981,7 @@ body {
   grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(150px, 1fr)) auto;
   gap: 12px;
   align-items: end;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: 16px;
+  margin-bottom: 6px;
 }
 
 .filter-bar.filter-bar-3 {
@@ -1844,14 +1846,12 @@ body {
   min-height: 100dvh;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(380px, 0.85fr);
+  grid-template-areas: "story form";
 }
 
 .login-brand-stage {
-  background-color: var(--sidebar-bg);
-  background-image:
-    linear-gradient(var(--stage-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--stage-grid-line) 1px, transparent 1px);
-  background-size: 36px 36px;
+  grid-area: story;
+  background: radial-gradient(ellipse at 44% 54%, var(--sidebar-bg), var(--stage-bg) 80%);
   color: var(--sidebar-text);
   padding: 36px 44px;
   display: flex;
@@ -1874,6 +1874,7 @@ body {
 
 .login-hero-title {
   margin: 0;
+  text-wrap: balance;
   font-family: var(--font-display);
   font-size: clamp(1.75rem, 2.7vw, 2.35rem);
   font-weight: 700;
@@ -1889,185 +1890,255 @@ body {
   max-width: 52ch;
 }
 
-.flow-3d-viewport {
-  position: relative;
-  perspective: 1100px;
-  padding: 18px 8px;
+.document-story {
+  width: min(100%, 620px);
+  margin: auto;
 }
 
-.flow-3d-scene {
-  position: relative;
-  transform-style: preserve-3d;
-  transform: rotateX(var(--tilt-x, 8deg)) rotateY(var(--tilt-y, -10deg));
-  transition: transform 360ms var(--ease-expo);
+.story-stage {
+  container-type: inline-size;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  max-width: 620px;
+  place-items: center;
 }
 
-.flow-connector-svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  transform: translateZ(-8px);
-}
-
-@keyframes flowPulse {
-  from { stroke-dashoffset: 36; }
-  to { stroke-dashoffset: 0; }
-}
-
-.flow-connector-line {
-  fill: none;
-  stroke: var(--accent-orange);
-  stroke-width: 2.2;
-  stroke-dasharray: 6 6;
-  stroke-linecap: round;
-  opacity: 0.72;
-  animation: flowPulse 1.6s linear infinite;
-}
-
-.flow-card {
+.story-desk {
   position: relative;
-  text-align: left;
-  font-family: var(--font-body);
-  padding: 16px 18px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--stage-card-border);
-  background-color: var(--stage-card-bg);
-  color: var(--sidebar-text);
-  cursor: pointer;
-  transform-style: preserve-3d;
-  transform: translateZ(0px);
-  box-shadow: var(--shadow-md);
-  transition: transform 340ms var(--ease-expo), background-color 240ms var(--ease-out), border-color 220ms var(--ease-out), box-shadow 300ms var(--ease-expo), color 200ms var(--ease-out);
+  width: 24em;
+  height: 16em;
+  font-size: min(4cqi, 20px);
+  perspective: 44em;
+  isolation: isolate;
 }
 
-.flow-card:hover {
-  border-color: var(--sidebar-text);
+.story-folder,
+.story-tray,
+.story-sheet,
+.story-search {
+  position: absolute;
+  transition: transform 650ms var(--ease-expo), opacity 400ms ease;
 }
 
-.flow-card.active {
-  background-color: var(--stage-card-active-bg);
-  color: var(--text-primary);
-  border-color: var(--accent-orange);
-  transform: translateZ(28px);
+.story-folder,
+.story-tray {
+  width: 16em;
+  height: 10.3em;
+  top: 3.2em;
+  left: 3.5em;
+  border-radius: .25em .5em .55em .55em;
   box-shadow: var(--stage-shadow);
 }
 
-.flow-card-head {
+.story-folder {
+  background: linear-gradient(145deg, var(--folder-light), var(--folder-dark));
+  transform: rotateX(24deg) rotateZ(-13deg);
+  border: 1px solid var(--folder-light);
+}
+
+.story-folder::before {
+  content: "";
+  position: absolute;
+  bottom: 99%;
+  left: -1px;
+  width: 5.2em;
+  height: .85em;
+  background: var(--folder-light);
+  clip-path: polygon(0 0, 82% 0, 100% 100%, 0 100%);
+}
+
+.story-folder span,
+.story-tray span {
+  position: absolute;
+  font: 700 .68em var(--font-display);
+  letter-spacing: .08em;
+}
+
+.story-folder span {
+  top: -.95em;
+  left: .75em;
+  color: var(--paper-bg);
+}
+
+.story-tray {
+  opacity: 0;
+  background: var(--folder-dark);
+  border: .32em solid var(--folder-light);
+  transform: translateX(2.6em) rotateX(32deg) rotateZ(4deg);
+}
+
+.story-tray span {
+  right: -.4em;
+  bottom: -.85em;
+  padding: .28em .65em;
+  border-radius: .2em;
+  background: var(--paper-marker);
+  color: var(--paper-ink);
+}
+
+.story-sheet {
+  left: 5.4em;
+  top: 1.7em;
+  width: 15.5em;
+  height: 11em;
+  padding: 1em 1.2em;
+  color: var(--paper-ink);
+  background: var(--paper-bg);
+  border-radius: .15em;
+  box-shadow: 0 .16em 0 var(--sheet-edge), var(--stage-shadow);
+  transform: rotateX(16deg) rotateZ(-7deg);
+  overflow: hidden;
+}
+
+.story-letterhead {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: .65em;
+  margin-bottom: 1em;
+  padding-bottom: .65em;
+  border-bottom: 1px solid var(--sheet-edge);
+  color: var(--paper-border);
+  font: 700 .6em var(--font-display);
+  letter-spacing: .12em;
 }
 
-.flow-card-actor {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--sidebar-muted);
+.story-letterhead img { width: 1.4em; height: auto; }
+
+.story-title {
+  display: block;
+  font: 700 1.5em/1.2 var(--font-display);
+  letter-spacing: -.03em;
 }
 
-.flow-card.active .flow-card-actor {
-  color: var(--primary-text);
+.story-sheet small { color: var(--paper-muted); font-size: .59em; }
+
+.story-stage[data-step="draft"] .story-folder { animation: storyOpen 650ms var(--ease-expo) both; }
+@keyframes storyOpen {
+  from { transform: translateY(.8em) rotateX(52deg) rotateZ(-5deg); }
+}
+.story-stage[data-step="draft"] .story-title,
+.story-stage[data-step="draft"] .story-sheet small {
+  animation: storyWrite 700ms steps(16) both;
+}
+.story-stage[data-step="draft"] .story-sheet small { animation-delay: 350ms; }
+@keyframes storyWrite { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+
+.story-rules { display: grid; gap: .33em; margin-top: .7em; }
+.story-rules i { width: 80%; height: .12em; background: var(--sheet-edge); }
+.story-rules i:last-child { width: 52%; }
+
+.story-status {
+  display: inline-block;
+  margin-top: .8em;
+  padding: .2em .6em;
+  border: 1px solid currentColor;
+  border-radius: .2em;
+  font: 600 .67em var(--font-body);
+  color: var(--paper-muted);
 }
 
-.flow-card-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background-color: var(--stage-card-border);
-  flex-shrink: 0;
-  transition: background-color 220ms var(--ease-out), transform 260ms var(--ease-expo);
-}
-
-.flow-card.active .flow-card-dot {
-  background-color: var(--accent-orange);
-  transform: scale(1.25);
-}
-
-.flow-card-title {
-  margin: 0 0 4px;
-  font-family: var(--font-display);
-  font-size: var(--text-body);
-  font-weight: 700;
-  color: inherit;
-}
-
-.flow-card-desc {
-  margin: 0;
-  font-size: var(--text-sm);
-  line-height: 1.45;
-  color: var(--sidebar-muted);
-}
-
-.flow-card.active .flow-card-desc {
-  color: var(--text-secondary);
-}
-
-.flow-doc-token {
-  grid-column: span 2;
-  justify-self: start;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-  border-radius: 999px;
-  background-color: var(--stage-card-active-bg);
-  color: var(--text-primary);
-  border: 1px solid var(--accent-orange);
+.story-search {
+  top: 3.45em;
+  left: 2em;
+  width: 20em;
+  height: 9.2em;
+  padding: .8em 1em;
+  display: flex;
+  align-items: flex-start;
+  gap: .55em;
+  background: var(--paper-header-bg);
+  color: var(--paper-muted);
+  border-radius: .6em;
   box-shadow: var(--stage-shadow);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  transform: translateZ(42px);
-  transition: transform 320ms var(--ease-expo);
+  transform: rotateX(14deg) scale(.9);
+  opacity: 0;
 }
 
-.flow-token-pill {
-  padding: 3px 9px;
-  border-radius: 999px;
-  background-color: var(--accent-orange);
-  color: var(--accent-orange-ink);
-  font-size: var(--text-sm);
-  font-weight: 700;
+.story-search svg { width: 1.2em; height: 1.2em; }
+.story-search span { font: 500 .92em/1.25 var(--font-body); overflow: hidden; }
+
+.story-stage[data-step="submit"] .story-folder { transform: translateX(-2em) rotateZ(-15deg); opacity: 0; }
+.story-stage[data-step="submit"] .story-tray { opacity: 1; }
+.story-stage[data-step="submit"] .story-sheet { transform: translate(.65em, .45em) rotateX(28deg) rotateZ(4deg); }
+.story-stage[data-step="review"] .story-folder,
+.story-stage[data-step="publish"] .story-folder { opacity: 0; }
+.story-stage[data-step="review"] .story-tray { opacity: .8; transform: translate(.9em, .65em) rotateX(35deg) rotateZ(3deg); }
+.story-stage[data-step="review"] .story-sheet { transform: translateY(-.15em) rotateZ(-3deg) scale(1.04); }
+.story-stage[data-step="review"] .story-status {
+  position: relative;
+  padding: 0;
+  border: 0;
+  color: var(--paper-border);
+  transform: rotate(-5deg);
+}
+.story-stage[data-step="review"] .story-status span {
+  display: block;
+  border: 3px double currentColor;
+  padding: .12em .55em;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  animation: stampInk 1.1s linear both;
+}
+.story-stage[data-step="review"] .story-status::after {
+  content: "";
+  position: absolute;
+  inset: auto -.16em .15em;
+  height: 4.5em;
+  background: linear-gradient(to bottom, var(--folder-light), var(--folder-dark) 56%, var(--paper-ink) 59%, var(--paper-muted) 84%, var(--paper-ink) 86%);
+  clip-path: polygon(41% 0, 59% 0, 63% 8%, 57% 33%, 57% 54%, 95% 62%, 100% 71%, 100% 100%, 0 100%, 0 71%, 5% 62%, 43% 54%, 43% 33%, 37% 8%);
+  transform-origin: bottom center;
+  animation: stampPress 1.1s both;
+}
+@keyframes stampPress {
+  0%, 16% { opacity: 0; transform: translate(1em, -3em) rotate(10deg); }
+  32% { opacity: 1; transform: translate(.3em, -1.8em) rotate(4deg); }
+  48%, 57% { opacity: 1; transform: scaleY(.94); }
+  82%, 100% { opacity: 0; transform: translate(.7em, -3em) rotate(6deg); }
+}
+@keyframes stampInk {
+  0%, 47% { opacity: 0; }
+  48%, 100% { opacity: 1; }
 }
 
-.flow-step-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
+.story-stage[data-step="publish"] .story-search { opacity: 1; transform: none; }
+.story-stage[data-step="publish"] .story-search span { animation: storyQuery 600ms steps(6) both; }
+@keyframes storyQuery { from { max-width: 0; } to { max-width: 6ch; } }
 
-.flow-step-btn {
-  min-height: 36px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--stage-card-border);
-  background-color: transparent;
+.story-stage[data-step="publish"] .story-sheet {
+  width: 18em;
+  height: 5.6em;
+  transform: translate(-2.4em, 4.55em);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--sheet-edge);
+  border-radius: .3em;
+}
+.story-stage[data-step="publish"] .story-letterhead,
+.story-stage[data-step="publish"] .story-rules { display: none; }
+.story-stage[data-step="publish"] .story-title { font-size: 1.2em; }
+.story-stage[data-step="publish"] .story-status { display: table; margin-top: .4em; color: var(--paper-border); }
+
+.story-caption { margin: 8px 0 12px; min-height: 2.8em; color: var(--sidebar-text); }
+.story-controls { display: flex; align-items: center; gap: 4px; }
+.story-controls button {
+  min-height: 44px;
+  background: transparent;
   color: var(--sidebar-muted);
-  font-family: var(--font-body);
-  font-size: var(--text-sm);
-  font-weight: 600;
+  border: 0;
   cursor: pointer;
-  transition: background-color 180ms var(--ease-out), color 180ms var(--ease-out), border-color 180ms var(--ease-out);
+  font: 600 var(--text-sm) var(--font-body);
 }
-
-.flow-step-btn:hover {
-  border-color: var(--sidebar-text);
-  color: var(--sidebar-text);
+.story-step {
+  flex: 1;
+  padding: 4px 1px;
+  box-shadow: inset 0 2px var(--stage-card-border);
 }
-
-.flow-step-btn.active {
-  background-color: var(--sidebar-active);
-  color: var(--sidebar-active-text);
-  border-color: var(--sidebar-active);
-}
+.story-step[aria-pressed="true"] { box-shadow: inset 0 3px var(--accent-orange); color: var(--sidebar-text); }
+.story-controls button:hover { background: var(--sidebar-hover); color: var(--sidebar-text); }
+.story-controls button:focus-visible { outline: 2px solid var(--sidebar-text); outline-offset: 2px; }
+.story-playback { min-width: 44px; border-radius: 50%; }
+.story-playback svg { vertical-align: middle; }
 
 .login-form-stage {
+  grid-area: form;
   background-color: var(--bg-surface);
   padding: 28px 36px;
   display: flex;
@@ -2109,6 +2180,7 @@ body {
 @media (max-width: 960px) {
   .login-portal {
     grid-template-columns: 1fr;
+    grid-template-areas: "form" "story";
   }
 
   .login-brand-stage {
@@ -2117,32 +2189,8 @@ body {
     border-bottom: 1px solid var(--sidebar-border);
   }
 
-  .flow-3d-scene {
-    transform: rotateX(4deg) rotateY(-4deg);
-  }
-
   .login-form-stage {
     padding: 24px 20px 32px;
-  }
-}
-
-@media (max-width: 640px) {
-  .flow-3d-scene {
-    grid-template-columns: 1fr;
-    transform: none;
-  }
-
-  .flow-doc-token {
-    grid-column: span 1;
-    transform: none;
-  }
-
-  .flow-card.active {
-    transform: none;
-  }
-
-  .flow-connector-svg {
-    display: none;
   }
 }
 
@@ -2504,21 +2552,19 @@ body {
   }
 
   .main-content.page-enter,
-  .flow-connector-line {
+  .story-stage[data-step] .story-folder,
+  .story-stage[data-step] .story-title,
+  .story-stage[data-step] .story-sheet small,
+  .story-stage[data-step] .story-status,
+  .story-stage[data-step] .story-status span,
+  .story-stage[data-step] .story-search span {
     animation: none;
   }
 
-  .flow-3d-scene,
-  .flow-card.active,
-  .flow-doc-token {
-    transform: none;
+  .story-stage * {
+    transition: none;
   }
-
-  .flow-card,
-  .flow-step-btn {
-    transition-duration: 120ms;
-    transition-timing-function: linear;
-  }
+  .story-stage[data-step="review"] .story-status::after { display: none; }
 }
 
 /* Theme Switch Animation (View Transition + Fallback) */

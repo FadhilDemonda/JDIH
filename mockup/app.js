@@ -45,7 +45,7 @@
     uploadSim: { progress: 0, fileName: '', sizeLabel: '', status: 'IDLE' },
     prevNavPill: null,
     lastRoutePath: null,
-    flowStep: 0,
+    flowObserver: null,
     flowTimer: null,
   };
 
@@ -609,6 +609,9 @@
       down: '<path d="M10 6v8M6.5 10.5L10 14l3.5-3.5"/>',
       trash: '<path d="M4.5 6h11M8 6V4h4v2M6 6v10.5a1 1 0 001 1h6a1 1 0 001-1V6"/>',
       dots: '<circle cx="10" cy="4.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="10" cy="10" r="1.3" fill="currentColor" stroke="none"/><circle cx="10" cy="15.5" r="1.3" fill="currentColor" stroke="none"/>',
+      search: '<circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4 4"/>',
+      pause: '<path d="M7 4v12M13 4v12"/>',
+      play: '<path d="M6 3.5l10 6.5-10 6.5z"/>',
       undo: '<path d="M5 8.5h7a4 4 0 110 8H9M5 8.5L8 5.5M5 8.5L8 11.5"/>',
     };
     return `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || ''}</svg>`;
@@ -1738,12 +1741,10 @@
           </div>
         </div>
 
-        <div class="filter-subrow">
-          <label class="checkbox-row">
-            <input type="checkbox" id="doc-show-inactive" ${f.showInactive ? 'checked' : ''}>
-            <span>Tampilkan tidak aktif</span>
-          </label>
-        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="doc-show-inactive" ${f.showInactive ? 'checked' : ''}>
+          <span>Tampilkan tidak aktif</span>
+        </label>
       </section>
 
       <section class="surface-panel" aria-labelledby="document-results-title">
@@ -4437,8 +4438,10 @@
 
   // ---------- Auth, Profile, 403 ----------
   function clearLoginFlow() {
+    state.flowObserver?.disconnect();
+    state.flowObserver = null;
     if (state.flowTimer) {
-      clearInterval(state.flowTimer);
+      clearTimeout(state.flowTimer);
       state.flowTimer = null;
     }
   }
@@ -4490,86 +4493,15 @@
       return;
     }
 
-    const FLOW_STEPS = [
-      {
-        actor: 'Koordinator / SPV',
-        title: 'Susun Draf',
-        desc: 'Buat dari 5 template resmi atau unggah PDF bertanda tangan (< 4 MB per potongan).',
-        pill: 'DRAF',
-        docLabel: 'RSAN/SPO/5/IGD/011 · Rev 00',
-      },
-      {
-        actor: 'Sistem Redis Lock',
-        title: 'Ajukan & Kunci',
-        desc: 'Cek nomor unik seluruh RS (409) dan kunci isi dokumen selama proses pemeriksaan.',
-        pill: 'MENUNGGU VERIFIKASI',
-        docLabel: 'Terkunci untuk antrean Manajer',
-      },
-      {
-        actor: 'Manajer Unit',
-        title: 'Verifikasi Manajer',
-        desc: 'Tinjau pratinjau A4 dan riwayat, lalu setujui langsung atau kembalikan dengan catatan.',
-        pill: 'DISETUJUI',
-        docLabel: 'Dicatat di Review_Log & notifikasi',
-      },
-      {
-        actor: '34 Unit RS AN-NISA',
-        title: 'Terbit & Berlaku',
-        desc: 'Keberlakuan dihitung otomatis dari tanggal WIB dengan arsip lengkap riwayat versi.',
-        pill: 'BERLAKU',
-        docLabel: 'Tersedia di pencarian seluruh staf',
-      },
+    const flowSteps = [
+      { id: 'draft', title: 'Susun', status: 'Draf', caption: 'Koordinator IGD menyusun draf SPO Triase IGD.' },
+      { id: 'submit', title: 'Ajukan', status: 'Menunggu verifikasi', caption: 'Draf masuk ke antrean verifikasi Manajer IGD.' },
+      { id: 'review', title: 'Verifikasi', status: 'Disetujui', caption: 'Manajer IGD memeriksa dan menyetujui dokumen.' },
+      { id: 'publish', title: 'Terbit', status: 'Terbit', caption: 'Staf dapat menemukan SPO Triase IGD di pencarian dokumen.' },
     ];
 
     main.innerHTML = `
       <section class="login-portal" aria-label="Portal Masuk JDIH RS AN-NISA">
-        <div class="login-brand-stage">
-          <div class="login-brand-top">
-            <span class="brand-mark">
-              <img src="assets/logo-rs-annisa.png" alt="Logo RS An-Nisa Tangerang" width="32" height="42" class="brand-logo" decoding="async">
-            </span>
-            <span class="brand-copy">
-              <strong class="brand-title">JDIH RS AN-NISA</strong>
-              <span class="brand-sub">Jaringan Dokumentasi dan Informasi Hukum</span>
-            </span>
-          </div>
-
-          <div class="login-hero-copy">
-            <h1 class="login-hero-title">Satu pintu regulasi terkendali RS AN-NISA</h1>
-            <p class="login-hero-sub">Dari penyusunan SK, Kebijakan, Pedoman, dan SPO unit hingga verifikasi Manajer dan arsip versi resmi.</p>
-          </div>
-
-          <div class="flow-3d-viewport" id="flow-3d-viewport">
-            <div class="flow-3d-scene" id="flow-3d-scene">
-              <svg class="flow-connector-svg" viewBox="0 0 600 280" preserveAspectRatio="none" aria-hidden="true">
-                <path class="flow-connector-line" d="M 150 68 L 450 68 L 150 205 L 450 205" />
-              </svg>
-
-              ${FLOW_STEPS.map((st, idx) => `
-                <button type="button" class="flow-card ${state.flowStep === idx ? 'active' : ''}" data-flow-step="${idx}" aria-pressed="${state.flowStep === idx}">
-                  <div class="flow-card-head">
-                    <span class="flow-card-actor">${esc(st.actor)}</span>
-                    <span class="flow-card-dot" aria-hidden="true"></span>
-                  </div>
-                  <h2 class="flow-card-title">${esc(st.title)}</h2>
-                  <p class="flow-card-desc">${esc(st.desc)}</p>
-                </button>
-              `).join('')}
-
-              <div class="flow-doc-token" id="flow-doc-token" aria-live="polite">
-                <span class="flow-token-pill" id="flow-token-pill">${esc(FLOW_STEPS[state.flowStep].pill)}</span>
-                <span id="flow-token-label">${esc(FLOW_STEPS[state.flowStep].docLabel)}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="flow-step-tabs" role="group" aria-label="Pilih tahapan alur aplikasi">
-            ${FLOW_STEPS.map((st, idx) => `
-              <button type="button" class="flow-step-btn ${state.flowStep === idx ? 'active' : ''}" data-flow-tab="${idx}">${esc(st.title)}</button>
-            `).join('')}
-          </div>
-        </div>
-
         <div class="login-form-stage">
           <div class="login-form-top">
             <span style="font-size:var(--text-sm);color:var(--text-secondary);font-weight:500;">Akses Internal Pegawai</span>
@@ -4638,67 +4570,100 @@
             RS AN-NISA Tangerang · Repositori Regulasi Internal (Fase 1)
           </div>
         </div>
+
+        <div class="login-brand-stage">
+          <div class="login-brand-top">
+            <span class="brand-mark">
+              <img src="assets/logo-rs-annisa.png" alt="Logo RS An-Nisa Tangerang" width="32" height="42" class="brand-logo" decoding="async">
+            </span>
+            <span class="brand-copy">
+              <strong class="brand-title">JDIH RS AN-NISA</strong>
+              <span class="brand-sub">Jaringan Dokumentasi dan Informasi Hukum</span>
+            </span>
+          </div>
+
+          <div class="login-hero-copy">
+            <h1 class="login-hero-title">Dari meja unit ke seluruh rumah sakit.</h1>
+            <p class="login-hero-sub">Ikuti perjalanan satu SPO, dari draf unit hingga dapat ditemukan oleh staf RS AN-NISA.</p>
+          </div>
+
+          <div class="document-story">
+            <div class="story-stage" data-step="draft" aria-hidden="true">
+              <div class="story-desk">
+                <div class="story-folder"><span>IGD</span></div>
+                <div class="story-tray"><span>Manajer IGD</span></div>
+                <div class="story-search">${iconSvg('search')}<span>triase</span></div>
+                <div class="story-sheet">
+                  <div class="story-letterhead"><img src="assets/logo-rs-annisa.png" alt="" width="22" height="29"> RS AN-NISA</div>
+                  <strong class="story-title">SPO Triase IGD</strong>
+                  <small>RSAN/SPO/5/IGD/011 · Rev 00</small>
+                  <div class="story-rules"><i></i><i></i><i></i></div>
+                  <span class="story-status"><span>Draf</span></span>
+                </div>
+              </div>
+            </div>
+            <p class="story-caption"></p>
+            <div class="story-controls" role="group" aria-label="Tahap alur dokumen">
+              ${flowSteps.map((step, index) => `
+                <button type="button" class="story-step" data-flow-tab="${index}">${step.title}</button>
+              `).join('')}
+              <button type="button" class="story-playback"></button>
+            </div>
+          </div>
+        </div>
       </section>
     `;
 
-    function setFlowStep(stepIdx) {
-      state.flowStep = (stepIdx + FLOW_STEPS.length) % FLOW_STEPS.length;
-      main.querySelectorAll('[data-flow-step]').forEach((el) => {
-        const active = Number(el.getAttribute('data-flow-step')) === state.flowStep;
-        el.classList.toggle('active', active);
-        el.setAttribute('aria-pressed', String(active));
-      });
-      main.querySelectorAll('[data-flow-tab]').forEach((el) => {
-        const active = Number(el.getAttribute('data-flow-tab')) === state.flowStep;
-        el.classList.toggle('active', active);
-      });
-      const st = FLOW_STEPS[state.flowStep];
-      const pill = document.getElementById('flow-token-pill');
-      const lbl = document.getElementById('flow-token-label');
-      if (pill) pill.textContent = st.pill;
-      if (lbl) lbl.textContent = st.docLabel;
+    const stage = main.querySelector('.story-stage');
+    const controls = main.querySelectorAll('[data-flow-tab]');
+    const playback = main.querySelector('.story-playback');
+    const lastStep = flowSteps.length - 1;
+    let currentStep = prefersReducedMotion() ? lastStep : 0;
+
+    function showStep(index) {
+      currentStep = index;
+      const step = flowSteps[index];
+      stage.dataset.step = step.id;
+      stage.querySelector('.story-status span').textContent = step.status;
+      main.querySelector('.story-caption').textContent = step.caption;
+      controls.forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)));
+      const action = state.flowTimer ? 'Jeda' : index === lastStep ? 'Putar ulang' : 'Putar';
+      playback.innerHTML = iconSvg(state.flowTimer ? 'pause' : index === lastStep ? 'undo' : 'play');
+      playback.setAttribute('aria-label', action + ' animasi alur dokumen');
+      playback.title = action;
+      playback.hidden = prefersReducedMotion();
     }
 
-    function startFlowCycle() {
+    function playFrom(index) {
       clearLoginFlow();
-      if (prefersReducedMotion()) return;
-      state.flowTimer = setInterval(() => {
-        if (!document.getElementById('flow-3d-scene')) {
-          clearLoginFlow();
-          return;
-        }
-        setFlowStep(state.flowStep + 1);
-      }, 3200);
+      if (!prefersReducedMotion()) {
+        state.flowTimer = setTimeout(() => playFrom((index + 1) % flowSteps.length), 2100);
+      }
+      showStep(index);
     }
 
-    main.querySelectorAll('[data-flow-step], [data-flow-tab]').forEach((btn) => {
-      btn.onclick = () => {
-        const idx = Number(btn.getAttribute('data-flow-step') ?? btn.getAttribute('data-flow-tab'));
-        setFlowStep(idx);
-        startFlowCycle();
+    controls.forEach((button, index) => {
+      button.onclick = () => {
+        clearLoginFlow();
+        showStep(index);
       };
     });
-
-    const viewport3d = document.getElementById('flow-3d-viewport');
-    const scene3d = document.getElementById('flow-3d-scene');
-    if (viewport3d && scene3d) {
-      viewport3d.addEventListener('pointermove', (e) => {
-        if (prefersReducedMotion()) return;
-        const r = viewport3d.getBoundingClientRect();
-        const nx = (e.clientX - r.left) / r.width - 0.5;
-        const ny = (e.clientY - r.top) / r.height - 0.5;
-        scene3d.style.setProperty('--tilt-y', `${(-10 + nx * 12).toFixed(2)}deg`);
-        scene3d.style.setProperty('--tilt-x', `${(8 - ny * 10).toFixed(2)}deg`);
+    playback.onclick = () => {
+      if (state.flowTimer) {
+        clearLoginFlow();
+        showStep(currentStep);
+      } else {
+        playFrom(currentStep === lastStep ? 0 : currentStep);
+      }
+    };
+    showStep(currentStep);
+    if (!prefersReducedMotion()) {
+      state.flowObserver = new IntersectionObserver(([entry]) => {
+        if (!entry.isIntersecting || !stage.isConnected) return;
+        playFrom(currentStep);
       });
-      viewport3d.addEventListener('pointerenter', clearLoginFlow);
-      viewport3d.addEventListener('pointerleave', () => {
-        scene3d.style.setProperty('--tilt-y', '-10deg');
-        scene3d.style.setProperty('--tilt-x', '8deg');
-        startFlowCycle();
-      });
+      state.flowObserver.observe(stage);
     }
-
-    startFlowCycle();
 
     const loginThemeBtn = document.getElementById('login-theme-btn');
     if (loginThemeBtn) loginThemeBtn.onclick = toggleThemeWithMotion;
