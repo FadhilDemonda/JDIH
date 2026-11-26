@@ -12,6 +12,7 @@ if (root) {
   process.env.JDIH_DEMO = '1';
 }
 const handleApi = root ? (await import('../server/api.mjs')).handleApi : null;
+const googleStore = await import('../server/google-store.mjs');
 const base = http || 'http://localhost:3000';
 const suffix = randomUUID().slice(0, 8);
 const writeKey = randomUUID();
@@ -209,6 +210,154 @@ async function run() {
     ['u-21', 'u-32'],
   );
   console.log('Lulus admin, penugasan langsung saat tambah pengguna, ganti password wajib, lockout, dan reset sesi.');
+
+  // Verifikasi Super Admin bisa tambah dokumen sendiri, ajukan tanpa manajer unit, dan setujui sendiri
+  assert.match(documentId, /^doc-\d{3,}$/);
+  assert.match(versionId, /^ver-\d{3,}$/);
+  assert.match(id, /^usr-\d{3,}$/);
+  assert.match(uploadId, /^att-\d{3,}$/);
+
+  const { body: { id: freshUnitId } } = await send('admin/units', {
+    method: 'POST', cookie: admin,
+    body: { kode: 'UJI' + suffix.slice(0, 4).toUpperCase(), nama: 'Unit Uji ' + suffix },
+  });
+  assert.match(freshUnitId, /^u-\d{2,}$/);
+  const { body: { documentId: adminDocId, versionId: adminVerId } } = await send('documents', {
+    method: 'POST', cookie: admin,
+    body: { unit_id: freshUnitId, category_id: 'cat-spo', metode: 'TEMPLATE' },
+  });
+  await send('versions/' + adminVerId, {
+    method: 'PATCH', cookie: admin,
+    body: { ...draftMetadata, nomor: 'SA/' + suffix, judul: 'Dokumen Super Admin ' + suffix },
+  });
+  await send('versions/' + adminVerId + '/submit', { method: 'POST', cookie: admin, key: randomUUID() });
+  const adminQueue = await send('reviews', { cookie: admin });
+  assert(adminQueue.body.items.some((v) => v.id === adminVerId));
+  await send('versions/' + adminVerId + '/review', { method: 'POST', cookie: admin, body: { aksi: 'SETUJUI' } });
+  const adminPublished = await send('documents?q=' + encodeURIComponent('SA/' + suffix), { cookie: staff });
+  assert.equal(adminPublished.body.total, 1);
+  assert.equal(adminPublished.body.items[0].id, adminDocId);
+
+  // Non-superadmin tetap tidak boleh menyetujui dokumen buatannya sendiri (walau kemudian dijadikan manajer unit)
+  const dualNik = randNik();
+  const { body: { id: dualId, temporaryPassword: dualTmp } } = await send('admin/users', {
+    method: 'POST', cookie: admin, body: { nik: dualNik, nama: 'Dual ' + suffix },
+  });
+  await send('admin/assignments', { method: 'POST', cookie: admin, body: { user_id: dualId, unit_id: 'u-21', peran: 'KOORDINATOR' } });
+  const { cookie: dualInit } = await send('auth/login', { method: 'POST', body: { nik: dualNik, password: dualTmp } });
+  const { cookie: dualCookie } = await send('auth/password', { method: 'POST', cookie: dualInit, body: { password: 'PasswordUAT1' } });
+  const { body: { versionId: dualVerId } } = await send('documents', {
+    method: 'POST', cookie: dualCookie, body: { unit_id: 'u-21', category_id: 'cat-spo', metode: 'TEMPLATE' },
+  });
+  await send('versions/' + dualVerId, {
+    method: 'PATCH', cookie: dualCookie,
+    body: { ...draftMetadata, nomor: 'DUAL/' + suffix, judul: 'Dokumen Dual ' + suffix },
+  });
+  await send('versions/' + dualVerId + '/submit', { method: 'POST', cookie: dualCookie });
+  const { body: { items: dualAssigns } } = await send('admin/assignments', { cookie: admin });
+  const koorAssign = dualAssigns.find((a) => a.user_id === dualId && a.unit_id === 'u-21' && a.is_active);
+  await send('admin/assignments/' + koorAssign.id, { method: 'DELETE', cookie: admin });
+  await send('admin/assignments', { method: 'POST', cookie: admin, body: { user_id: dualId, unit_id: 'u-21', peran: 'MANAJER' } });
+  await send('versions/' + dualVerId + '/review', { method: 'POST', cookie: dualCookie, body: { aksi: 'SETUJUI' }, status: 403 });
+  console.log('Lulus izin penuh Super Admin (buat, ajukan, setujui sendiri) dan proteksi non-superadmin.');
+
+  // Verifikasi encoding Sheets terbaca manusia, tanpa hash selain password_hash, dan nama folder Drive terbaca
+  const sampleState = {
+    users: [
+      { id: 'usr-001', nik: '1221.21.23', nama: 'M. Fadhil Pratama', unit_home: 'DTO', is_super_admin: true, is_active: true, must_change_password: false, password_hash: '$2b$12$examplebcrypthashvalue123456789012345678901234567890' },
+      { id: 'usr-002', nik: '1985.11.03', nama: 'Ns. Budi Santoso', unit_home: 'IGD', is_super_admin: false, is_active: true, must_change_password: false, password_hash: '$2b$12$otherbcrypthashvalue12345678901234567890123456789012' },
+    ],
+    units: [{ id: 'u-21', kode: 'IGD', nama: 'IGD', drive_folder_id: 'drv-igd', is_active: true }],
+    categories: [{ id: 'cat-spo', kode: 'SPO', label: 'SPO', contoh_nomor: 'RSAN/SPO/5/DTO/007', template_version: 3, urutan: 5, sections: [{ code: 'PENGERTIAN', label: 'Pengertian', type: 'textarea' }] }],
+    userUnits: [{ id: 'uu-001', user_id: 'usr-002', unit_id: 'u-21', peran: 'KOORDINATOR', is_active: true }],
+    documents: [{ id: 'doc-001', unit_id: 'u-21', category_id: 'cat-spo', status_aktif: 'AKTIF', alasan_tidak_aktif: '', tgl_tidak_aktif: '', created_by: 'usr-002' }],
+    versions: [{
+      id: 'ver-001', document_id: 'doc-001', revisi_label: '00', judul: 'SPO Triase', nomor: 'RSAN/SPO/IGD/001',
+      tgl_dokumen: '2026-01-01', tgl_berlaku: '2026-01-01', kata_kunci: 'triase', ringkasan_perubahan: '',
+      metode: 'UPLOAD', status: 'DISETUJUI', template_version: 3, template_sections: [], edit_version: 2,
+      created_by: 'usr-002', submitted_at: '2026-01-01T00:00:00.000Z', approved_at: '2026-01-02T00:00:00.000Z',
+      approved_by: 'usr-001', return_note: '', sections: { PENGERTIAN: 'Triase IGD.' },
+      attachments: [{ id: 'att-001', nama: 'spo.pdf', ukuran: '10 KB', mime: 'application/pdf', kind: 'PDF' }],
+    }],
+    uploads: [{ id: 'att-001', versionId: 'ver-001', userId: 'usr-002', nama: 'spo.pdf', size: 10240, ukuran: '10 KB', mime: 'application/pdf', kind: 'PDF', offset: 10240, offsets: [0], chunk_hashes: { 0: 'deadbeef' }, expires: Date.now() + 60_000, ready: true, drive_id: 'drv-file-1', upload_url: 'https://example.invalid/temp' }],
+    reviewLogs: [{ id: 'rlog-001', version_id: 'ver-001', user_id: 'usr-001', aksi: 'SETUJUI', catatan: '', created_at: '2026-01-02T00:00:00.000Z' }],
+    documentLogs: [{ id: 'dlog-001', document_id: 'doc-001', user_id: 'usr-002', aksi: 'NONAKTIFKAN', alasan: 'Uji', created_at: '2026-01-03T00:00:00.000Z' }],
+    notifications: [{ id: 'ntf-001', user_id: 'usr-002', jenis: 'DISETUJUI', target_id: 'doc-001', url: '#/dokumen/doc-001', pesan: 'OK', is_read: false, is_relevant: true, created_at: '2026-01-02T00:00:00.000Z' }],
+    operations: { 'usr-001:op-1': { user_id: 'usr-001', aksi: 'POST /api/documents', fingerprint: 'POST /api/documents {"unit_id":"u-21"}', result: { documentId: 'doc-001' }, expires: Date.now() + 60_000 } },
+  };
+  const encoded = googleStore.encodeTables(sampleState);
+  assert.equal(encoded.Documents[0].created_by, 'Ns. Budi Santoso');
+  assert.equal(encoded.Documents[0].created_by_id, 'usr-002');
+  assert.equal(encoded.Documents[0].nama_unit, 'IGD');
+  assert.equal(encoded.Document_Versions[0].created_by, 'Ns. Budi Santoso');
+  assert.equal(encoded.Document_Versions[0].approved_by, 'M. Fadhil Pratama');
+  assert.equal(encoded.User_Units[0].nama_user, 'Ns. Budi Santoso');
+  assert.equal(encoded.Attachments[0].nama_user, 'Ns. Budi Santoso');
+  assert.equal(encoded.Attachments[0].upload_url, '');
+  assert(!('chunk_hashes' in encoded.Attachments[0]));
+  assert.equal(encoded.Review_Log[0].nama_user, 'M. Fadhil Pratama');
+  assert.equal(encoded.Document_Log[0].nama_user, 'Ns. Budi Santoso');
+  assert.equal(encoded.Notifications[0].nama_user, 'Ns. Budi Santoso');
+  assert.equal(encoded.Operations[0].nama_user, 'M. Fadhil Pratama');
+  for (const [tableName, rows] of Object.entries(encoded)) {
+    for (const row of rows) {
+      for (const [col, val] of Object.entries(row)) {
+        if (tableName === 'Users' && col === 'password_hash') {
+          assert(String(val).startsWith('$2'));
+        } else {
+          assert(!/^[a-f0-9]{64}$/i.test(String(val)), `Hash tidak diizinkan pada ${tableName}.${col}`);
+        }
+      }
+    }
+  }
+  const decoded = googleStore.decodeCloudTables(encoded);
+  assert.equal(decoded.documents[0].created_by, 'usr-002');
+  assert.equal(decoded.versions[0].created_by, 'usr-002');
+  assert.equal(decoded.versions[0].approved_by, 'usr-001');
+  // Legacy fallback: created_by hanya berisi user ID tanpa created_by_id
+  const legacyEncoded = structuredClone(encoded);
+  legacyEncoded.Documents[0].created_by = 'usr-002';
+  delete legacyEncoded.Documents[0].created_by_id;
+  assert.equal(googleStore.decodeCloudTables(legacyEncoded).documents[0].created_by, 'usr-002');
+
+  assert.equal(googleStore.documentFolderName(sampleState.documents[0], sampleState.versions[0], sampleState.categories[0]), 'RSAN - SPO - IGD - 001 - SPO Triase');
+  assert.equal(googleStore.versionFolderName(sampleState.versions[0]), 'Rev 00');
+  console.log('Lulus format Google Sheets terbaca manusia, tanpa hash selain password, dan nama folder Drive.');
+
+  // Verifikasi default password annisa123 dan impor pengguna massal
+  const defaultPwNik = randNik();
+  const { body: singleDefaultRes } = await send('admin/users', {
+    method: 'POST', cookie: admin, body: { nik: defaultPwNik, nama: 'Default Pw ' + suffix },
+  });
+  assert.equal(singleDefaultRes.temporaryPassword, 'annisa123');
+
+  const impNik1Raw = randNik().replace(/\./g, '');
+  const impNik1Fmt = impNik1Raw.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1.$2.$3');
+  const impNik2 = randNik();
+  await send('admin/users/import', {
+    method: 'POST', cookie: staff, body: { users: [{ nik: randNik(), nama: 'Ditolak' }] }, status: 403,
+  });
+  const { body: importRes } = await send('admin/users/import', {
+    method: 'POST', cookie: admin,
+    body: {
+      users: [
+        { nik: impNik1Raw, nama: 'Impor Satu ' + suffix, password: '' },
+        { nik: impNik2, nama: 'Impor Dua ' + suffix, password: 'CustomPass9' },
+        { nik: impNik1Fmt, nama: 'Duplikat ' + suffix },
+        { nik: 'bad', nama: 'NIK Salah' },
+      ],
+    },
+  });
+  assert.equal(importRes.imported, 2);
+  assert.equal(importRes.skipped.length, 2);
+  importRes.ids.forEach((createdId) => assert.match(createdId, /^usr-\d{3,}$/));
+
+  const { cookie: impInit1 } = await send('auth/login', {
+    method: 'POST', body: { nik: impNik1Fmt, password: 'annisa123' },
+  });
+  await send('documents', { cookie: impInit1, status: 403 });
+  await send('auth/login', { method: 'POST', body: { nik: impNik2, password: 'CustomPass9' } });
+  console.log('Lulus impor pengguna massal dan template password annisa123.');
 }
 
 try {

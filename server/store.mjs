@@ -41,7 +41,7 @@ export async function saveState(data) {
 }
 
 export function filePath(id) {
-  if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error('Invalid file identifier');
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) throw new Error('Invalid file identifier');
   return path.join(root, 'files', id);
 }
 

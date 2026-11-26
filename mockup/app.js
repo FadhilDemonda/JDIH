@@ -2674,6 +2674,7 @@
       <div class="bottom-action-bar">
         ${isLocked ? `
           <button type="button" class="btn btn-secondary" id="edit-withdraw-btn">Tarik Pengajuan</button>
+          ${user.is_super_admin ? `<a href="#/verifikasi/${ver.id}" class="btn btn-primary">Verifikasi &amp; Setujui</a>` : ''}
         ` : `
           <button type="button" class="btn btn-secondary" id="edit-save-btn">Simpan Draf</button>
           <button type="button" class="btn btn-primary" id="edit-submit-btn">Ajukan ke Manajer</button>
@@ -2877,7 +2878,7 @@
         }
 
         const unitManagers = state.userUnits.filter((uu) => uu.unit_id === doc.unit_id && uu.peran === 'MANAJER' && uu.is_active);
-        if (live ? !unit?.has_manager : !unitManagers.length) {
+        if (!user.is_super_admin && (live ? !unit?.has_manager : !unitManagers.length)) {
           showToast('Manajer unit belum diseting, harap hubungi tim DTO.', 'error');
           return;
         }
@@ -3231,7 +3232,7 @@
     const cat = getCategory(doc.category_id);
     const submitter = getUser(ver.created_by);
     const logs = state.reviewLogs.filter((l) => l.version_id === ver.id);
-    const canDecide = ver.status === 'MENUNGGU_VERIFIKASI' && (!live || ver.created_by !== user.id);
+    const canDecide = ver.status === 'MENUNGGU_VERIFIKASI' && (!live || user.is_super_admin || ver.created_by !== user.id);
     const canAnnotate = live && canDecide && ver.metode === 'TEMPLATE';
     if (canAnnotate && (reviewDraft?.versionId !== ver.id || reviewDraft?.submittedAt !== ver.submitted_at || reviewDraft?.userId !== user.id)) {
       reviewDraft = { versionId: ver.id, submittedAt: ver.submitted_at, userId: user.id, annotations: [] };
@@ -3663,6 +3664,125 @@
     });
   }
 
+  function parseCsvRow(line, delimiter) {
+    const cells = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (ch === delimiter && !inQuotes) {
+        cells.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    cells.push(current.trim());
+    return cells;
+  }
+
+  function detectImportDelimiter(line) {
+    if (line.includes('\t')) return '\t';
+    const semi = (line.match(/;/g) || []).length;
+    const comma = (line.match(/,/g) || []).length;
+    return semi > comma ? ';' : ',';
+  }
+
+  function parseUserImportText(rawText, defaultPassword) {
+    const lines = String(rawText || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (!lines.length) return [];
+    const fallbackPw = String(defaultPassword || '').trim() || 'annisa123';
+    const existingNiks = new Set(state.users.map((u) => u.nik));
+    const seenNiks = new Set();
+
+    const firstCells = parseCsvRow(lines[0], detectImportDelimiter(lines[0])).map((c) => c.toLowerCase());
+    let startIdx = 0;
+    let headerMap = null;
+    const findCol = (names) => firstCells.findIndex((c) => names.includes(c));
+    const nikCol = findCol(['nik', 'no nik', 'nomor nik']);
+    const namaCol = findCol(['nama', 'nama pengguna', 'nama lengkap', 'name']);
+    const pwCol = findCol(['password', 'kata sandi', 'sandi', 'pass']);
+    if (nikCol !== -1 && namaCol !== -1) {
+      headerMap = { nikCol, namaCol, pwCol };
+      startIdx = 1;
+    }
+
+    const looksLikeNik = (val) => {
+      const s = String(val || '').trim();
+      return /^\d{4}\.\d{2}\.\d{2}$/.test(s) || (/^\d{8}$/.test(s.replace(/\D/g, '')) && !/[A-Za-z]/.test(s));
+    };
+
+    const rows = [];
+    for (let i = startIdx; i < lines.length; i += 1) {
+      const cells = parseCsvRow(lines[i], detectImportDelimiter(lines[i]));
+      let rawNik = '';
+      let nama = '';
+      let rawPw = '';
+      if (headerMap) {
+        rawNik = cells[headerMap.nikCol] || '';
+        nama = cells[headerMap.namaCol] || '';
+        rawPw = headerMap.pwCol !== -1 ? (cells[headerMap.pwCol] || '') : '';
+      } else if (looksLikeNik(cells[0])) {
+        rawNik = cells[0] || '';
+        nama = cells[1] || '';
+        rawPw = cells[2] || '';
+      } else if (looksLikeNik(cells[1])) {
+        nama = cells[0] || '';
+        rawNik = cells[1] || '';
+        rawPw = cells[2] || '';
+      } else {
+        rawNik = cells[0] || '';
+        nama = cells[1] || '';
+        rawPw = cells[2] || '';
+      }
+
+      const trimmedNik = rawNik.trim();
+      const nik = /^\d{4}\.\d{2}\.\d{2}$/.test(trimmedNik)
+        ? trimmedNik
+        : (/^\d{8}$/.test(trimmedNik.replace(/\D/g, '')) && !/[A-Za-z]/.test(trimmedNik) ? formatNikInput(trimmedNik) : trimmedNik);
+      const cleanNama = nama.trim();
+      const password = rawPw.trim() || fallbackPw;
+
+      let reason = '';
+      if (!isValidNik(nik)) reason = 'Format NIK wajib 0000.00.00';
+      else if (!cleanNama || cleanNama.length > 180) reason = 'Nama wajib diisi';
+      else if (existingNiks.has(nik)) reason = 'NIK sudah terdaftar';
+      else if (seenNiks.has(nik)) reason = 'NIK duplikat di daftar';
+      else if (password.length < 8 || password.length > 72 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+        reason = 'Password minimal 8 karakter huruf & angka';
+      }
+
+      const valid = !reason;
+      if (valid) seenNiks.add(nik);
+      rows.push({ row: i + 1, nik, nama: cleanNama, password, valid, reason: reason || 'Siap diimpor' });
+    }
+    return rows;
+  }
+
+  function downloadUserImportTemplate() {
+    const csv = [
+      'nik,nama,password',
+      '1995.03.11,"Ns. Sari Indah, S.Kep",annisa123',
+      '1996.04.12,"Apt. Doni Pratama, S.Farm",annisa123',
+    ].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'template-impor-pengguna.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   function viewAdminPengguna() {
     if (!requireSuperAdmin()) return;
     const main = document.getElementById('main-content');
@@ -3679,6 +3799,7 @@
           <p class="page-subtitle">Daftar akun pegawai berbasis NIK format 0000.00.00.</p>
         </div>
         <div class="page-actions">
+          <button type="button" class="btn btn-secondary" id="import-user-btn">${iconSvg('upload')}<span>Impor Pengguna</span></button>
           <button type="button" class="btn btn-primary" id="add-user-btn">${iconSvg('plus')}<span>Tambah Pengguna</span></button>
         </div>
       </div>
@@ -3723,61 +3844,125 @@
             </tbody>
           </table>
         </div>
+
+        <div class="pagination-bar">
+          <div class="pagination-controls">
+            <label for="user-pagesize">Baris per halaman</label>
+            <select id="user-pagesize" class="select" style="width:auto;min-height:36px;">
+              ${[10, 25, 50].map((n) => `<option value="${n}" ${state.adminUserPageSize === n ? 'selected' : ''}>${n}</option>`).join('')}
+            </select>
+          </div>
+          <div class="pagination-controls">
+            <button type="button" class="btn btn-secondary btn-compact" id="user-prev-page" ${state.adminUserPage <= 1 ? 'disabled' : ''}>Sebelumnya</button>
+            <span class="tabular">Halaman ${state.adminUserPage} dari ${totalPages}</span>
+            <button type="button" class="btn btn-secondary btn-compact" id="user-next-page" ${state.adminUserPage >= totalPages ? 'disabled' : ''}>Berikutnya</button>
+          </div>
+        </div>
       </section>
 
     `;
 
+    enhanceSelects(main);
+
     document.getElementById('user-search').oninput = (e) => {
       state.adminUserSearch = e.target.value;
+      state.adminUserPage = 1;
       viewAdminPengguna();
       const inp = document.getElementById('user-search');
       inp.focus();
       inp.setSelectionRange(inp.value.length, inp.value.length);
     };
 
-    document.getElementById('add-user-btn').onclick = async () => {
+    document.getElementById('user-pagesize').onchange = (e) => {
+      state.adminUserPageSize = Number(e.target.value) || 10;
+      state.adminUserPage = 1;
+      viewAdminPengguna();
+    };
+    document.getElementById('user-prev-page').onclick = () => {
+      if (state.adminUserPage > 1) {
+        state.adminUserPage -= 1;
+        viewAdminPengguna();
+      }
+    };
+    document.getElementById('user-next-page').onclick = () => {
+      if (state.adminUserPage < totalPages) {
+        state.adminUserPage += 1;
+        viewAdminPengguna();
+      }
+    };
+
+    async function openAddUserModal(initialTab = 'SINGLE') {
       const activeUnits = state.units.filter((u) => u.is_active);
+      let activeTab = initialTab;
       const res = await openDialog({
         title: 'Tambah Pengguna Baru',
         wide: true,
         bodyHtml: `
-          <div class="field-grid">
-            <div class="field col-5"><label for="nu-nik">NIK (0000.00.00) <span class="req-mark">*</span></label><input id="nu-nik" class="input tabular" placeholder="1995.03.11"></div>
-            <div class="field col-7"><label for="nu-nama">Nama Lengkap &amp; Gelar <span class="req-mark">*</span></label><input id="nu-nama" class="input" placeholder="Ns. Sari Indah, S.Kep"></div>
-            ${live ? '<div class="field col-12"><label for="nu-password">Password awal (kosongkan untuk dibuat otomatis)</label><input id="nu-password" type="password" class="input" autocomplete="new-password"></div>' : ''}
-            <div class="field col-12">
-              <label for="nu-role">Peran Pengguna <span class="req-mark">*</span></label>
-              <select id="nu-role" class="select">
-                <option value="STAF">Staf (baca seluruh dokumen terbit)</option>
-                <option value="KOORDINATOR">Koordinator / SPV (susun &amp; ajukan dokumen unit)</option>
-                <option value="MANAJER">Manajer (verifikasi &amp; terbitkan dokumen unit)</option>
-                <option value="SUPER_ADMIN">Super Admin (akses penuh sistem)</option>
-              </select>
-            </div>
-            <div class="field col-12" id="nu-home-wrap">
-              <label for="nu-home-unit">Unit Utama (opsional)</label>
-              <select id="nu-home-unit" class="select">
-                <option value="">Staf RS (Umum)</option>
-                ${activeUnits.map((u) => `<option value="${esc(u.nama)}">${esc(u.kode)} - ${esc(u.nama)}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field col-12" id="nu-units-wrap" hidden>
-              <label for="nu-unit-filter">Penugasan Unit Kerja <span class="req-mark">*</span></label>
-              <input id="nu-unit-filter" type="search" class="input" placeholder="Cari nama atau kode unit...">
-              <div class="unit-checklist" role="group" aria-label="Pilih unit kerja">
-                ${activeUnits.map((u) => `
-                  <label class="unit-check-item" data-unit-label="${esc((u.kode + ' ' + u.nama).toLowerCase())}">
-                    <input type="checkbox" name="nu-unit" value="${esc(u.id)}">
-                    <span><strong>${esc(u.kode)}</strong> - ${esc(u.nama)}</span>
-                  </label>
-                `).join('')}
-              </div>
-              <p class="field-help">Pilih satu atau lebih unit yang dikelola oleh pengguna ini.</p>
-            </div>
-            <p id="nu-form-error" class="field-error col-12" hidden></p>
+          <div class="tablist" role="tablist" aria-label="Mode tambah pengguna" style="margin-bottom:14px;">
+            <button type="button" role="tab" data-add-tab="SINGLE" aria-selected="${initialTab === 'SINGLE'}">Tambah Satu</button>
+            <button type="button" role="tab" data-add-tab="IMPORT" aria-selected="${initialTab === 'IMPORT'}">Impor Massal (CSV / Excel)</button>
           </div>
+
+          <div id="nu-panel-single" ${initialTab === 'SINGLE' ? '' : 'hidden'}>
+            <div class="field-grid">
+              <div class="field col-5"><label for="nu-nik">NIK (0000.00.00) <span class="req-mark">*</span></label><input id="nu-nik" class="input tabular" placeholder="1995.03.11"></div>
+              <div class="field col-7"><label for="nu-nama">Nama Lengkap &amp; Gelar <span class="req-mark">*</span></label><input id="nu-nama" class="input" placeholder="Ns. Sari Indah, S.Kep"></div>
+              ${live ? '<div class="field col-12"><label for="nu-password">Password awal (kosongkan untuk pakai annisa123)</label><input id="nu-password" type="password" class="input" autocomplete="new-password" placeholder="annisa123"></div>' : ''}
+              <div class="field col-12">
+                <label for="nu-role">Peran Pengguna <span class="req-mark">*</span></label>
+                <select id="nu-role" class="select">
+                  <option value="STAF">Staf (baca seluruh dokumen terbit)</option>
+                  <option value="KOORDINATOR">Koordinator / SPV (susun &amp; ajukan dokumen unit)</option>
+                  <option value="MANAJER">Manajer (verifikasi &amp; terbitkan dokumen unit)</option>
+                  <option value="SUPER_ADMIN">Super Admin (akses penuh sistem)</option>
+                </select>
+              </div>
+              <div class="field col-12" id="nu-home-wrap">
+                <label for="nu-home-unit">Unit Utama (opsional)</label>
+                <select id="nu-home-unit" class="select">
+                  <option value="">Staf RS (Umum)</option>
+                  ${activeUnits.map((u) => `<option value="${esc(u.nama)}">${esc(u.kode)} - ${esc(u.nama)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="field col-12" id="nu-units-wrap" hidden>
+                <label for="nu-unit-filter">Penugasan Unit Kerja <span class="req-mark">*</span></label>
+                <input id="nu-unit-filter" type="search" class="input" placeholder="Cari nama atau kode unit...">
+                <div class="unit-checklist" role="group" aria-label="Pilih unit kerja">
+                  ${activeUnits.map((u) => `
+                    <label class="unit-check-item" data-unit-label="${esc((u.kode + ' ' + u.nama).toLowerCase())}">
+                      <input type="checkbox" name="nu-unit" value="${esc(u.id)}">
+                      <span><strong>${esc(u.kode)}</strong> - ${esc(u.nama)}</span>
+                    </label>
+                  `).join('')}
+                </div>
+                <p class="field-help">Pilih satu atau lebih unit yang dikelola oleh pengguna ini.</p>
+              </div>
+            </div>
+          </div>
+
+          <div id="nu-panel-import" ${initialTab === 'IMPORT' ? '' : 'hidden'}>
+            <div class="field-grid">
+              <div class="field col-12">
+                <label for="imp-default-pw">Template Password Awal (jika kolom password kosong)</label>
+                <input id="imp-default-pw" class="input tabular" value="annisa123" placeholder="annisa123">
+                <p class="field-help">Dipakai otomatis untuk baris yang tidak mengisi kolom password. Pengguna wajib mengganti password saat login pertama.</p>
+              </div>
+              <div class="field col-12">
+                <label for="imp-text">Data Impor (CSV / salin-tempel dari Excel atau Google Sheets) <span class="req-mark">*</span></label>
+                <div class="import-toolbar" style="margin-bottom:8px;">
+                  <label class="btn btn-secondary btn-compact">${iconSvg('upload')}<span>Pilih Berkas CSV/TXT</span><input id="imp-file" type="file" accept=".csv,.txt,text/csv,text/plain" class="file-picker"></label>
+                  <button type="button" class="btn btn-ghost btn-compact" id="imp-download-tpl">${iconSvg('download')}<span>Unduh Template CSV</span></button>
+                </div>
+                <textarea id="imp-text" class="textarea tabular" rows="6" placeholder="nik,nama,password&#10;1995.03.11,&quot;Ns. Sari Indah, S.Kep&quot;,annisa123&#10;1996.04.12,&quot;Apt. Doni Pratama, S.Farm&quot;,"></textarea>
+                <p class="field-help">Kolom: <strong>NIK</strong>, <strong>Nama Pengguna</strong>, dan <strong>Password</strong> (opsional, otomatis <code>annisa123</code>). Mendukung pemisah koma, titik koma, atau tab Excel.</p>
+              </div>
+              <div class="col-12" id="imp-preview"></div>
+            </div>
+          </div>
+
+          <p id="nu-form-error" class="field-error" style="margin-top:10px;" hidden></p>
         `,
-        confirmLabel: 'Simpan Pengguna',
+        confirmLabel: initialTab === 'IMPORT' ? 'Impor Pengguna' : 'Simpan Pengguna',
         onOpen: (dialog) => {
           enhanceSelects(dialog);
           const nikEl = dialog.querySelector('#nu-nik');
@@ -3786,6 +3971,65 @@
           const unitsWrap = dialog.querySelector('#nu-units-wrap');
           const unitFilter = dialog.querySelector('#nu-unit-filter');
           const errEl = dialog.querySelector('#nu-form-error');
+          const singlePanel = dialog.querySelector('#nu-panel-single');
+          const importPanel = dialog.querySelector('#nu-panel-import');
+          const okBtn = dialog.querySelector('#dialog-ok-btn');
+          const impDefaultPw = dialog.querySelector('#imp-default-pw');
+          const impText = dialog.querySelector('#imp-text');
+          const impFile = dialog.querySelector('#imp-file');
+          const impDownload = dialog.querySelector('#imp-download-tpl');
+          const impPreview = dialog.querySelector('#imp-preview');
+          const tabs = Array.from(dialog.querySelectorAll('[data-add-tab]'));
+
+          function refreshImportPreview() {
+            const parsed = parseUserImportText(impText.value, impDefaultPw.value);
+            const validCount = parsed.filter((r) => r.valid).length;
+            const skippedCount = parsed.length - validCount;
+            if (activeTab === 'IMPORT') {
+              okBtn.textContent = validCount > 0 ? `Impor ${validCount} Pengguna` : 'Impor Pengguna';
+            }
+            if (!parsed.length) {
+              impPreview.innerHTML = '';
+              return;
+            }
+            impPreview.innerHTML = `
+              <p class="field-help tabular" style="margin-top:4px;"><strong>${validCount}</strong> siap diimpor · <strong>${skippedCount}</strong> dilewati</p>
+              <div class="import-preview-wrap">
+                <table class="data-table">
+                  <thead><tr><th>NIK</th><th>Nama Pengguna</th><th>Password</th><th>Status</th></tr></thead>
+                  <tbody>
+                    ${parsed.slice(0, 50).map((r) => `
+                      <tr>
+                        <td class="tabular">${esc(r.nik || '-')}</td>
+                        <td>${esc(r.nama || '-')}</td>
+                        <td class="tabular">${esc(r.password || '-')}</td>
+                        <td><span class="status-pill status-${r.valid ? 'success' : 'danger'}">${esc(r.reason)}</span></td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+              ${parsed.length > 50 ? `<p class="field-help">Menampilkan 50 baris pertama dari ${parsed.length} baris.</p>` : ''}
+            `;
+          }
+
+          function switchTab(nextTab) {
+            activeTab = nextTab;
+            singlePanel.hidden = nextTab !== 'SINGLE';
+            importPanel.hidden = nextTab !== 'IMPORT';
+            tabs.forEach((t) => t.setAttribute('aria-selected', String(t.getAttribute('data-add-tab') === nextTab)));
+            errEl.hidden = true;
+            if (nextTab === 'IMPORT') {
+              refreshImportPreview();
+            } else {
+              okBtn.textContent = 'Simpan Pengguna';
+            }
+          }
+
+          tabs.forEach((t) => {
+            t.onclick = () => switchTab(t.getAttribute('data-add-tab'));
+          });
+
           nikEl.oninput = (e) => {
             e.target.value = formatNikInput(e.target.value);
             errEl.hidden = true;
@@ -3797,11 +4041,28 @@
             errEl.hidden = true;
           };
           unitFilter.oninput = () => {
-            const q = unitFilter.value.trim().toLowerCase();
+            const qf = unitFilter.value.trim().toLowerCase();
             dialog.querySelectorAll('.unit-check-item').forEach((row) => {
-              row.hidden = Boolean(q && !row.dataset.unitLabel.includes(q));
+              row.hidden = Boolean(qf && !row.dataset.unitLabel.includes(qf));
             });
           };
+          impDefaultPw.oninput = () => {
+            errEl.hidden = true;
+            refreshImportPreview();
+          };
+          impText.oninput = () => {
+            errEl.hidden = true;
+            refreshImportPreview();
+          };
+          impFile.onchange = async () => {
+            const file = impFile.files?.[0];
+            if (!file) return;
+            impText.value = await file.text();
+            errEl.hidden = true;
+            refreshImportPreview();
+          };
+          impDownload.onclick = () => downloadUserImportTemplate();
+          refreshImportPreview();
         },
         validate: (dialog) => {
           const errEl = dialog.querySelector('#nu-form-error');
@@ -3810,6 +4071,24 @@
             errEl.hidden = false;
             return null;
           };
+          if (activeTab === 'IMPORT') {
+            const defaultPassword = (dialog.querySelector('#imp-default-pw')?.value || '').trim() || 'annisa123';
+            if (defaultPassword.length < 8 || defaultPassword.length > 72 || !/[A-Za-z]/.test(defaultPassword) || !/\d/.test(defaultPassword)) {
+              return showErr('Template password minimal 8 karakter kombinasi huruf dan angka.');
+            }
+            const parsed = parseUserImportText(dialog.querySelector('#imp-text')?.value || '', defaultPassword);
+            if (!parsed.length) return showErr('Tempel data CSV/Excel atau pilih berkas CSV terlebih dahulu.');
+            const validRows = parsed.filter((r) => r.valid);
+            if (!validRows.length) {
+              return showErr('Tidak ada baris valid untuk diimpor (' + (parsed[0]?.reason || 'periksa format data') + ').');
+            }
+            if (validRows.length > 500) {
+              return showErr('Maksimal 500 pengguna dalam sekali impor.');
+            }
+            errEl.hidden = true;
+            return { mode: 'IMPORT', defaultPassword, rows: validRows, skippedCount: parsed.length - validRows.length };
+          }
+
           const nik = formatNikInput(dialog.querySelector('#nu-nik')?.value || '');
           const nama = (dialog.querySelector('#nu-nama')?.value || '').trim();
           const password = dialog.querySelector('#nu-password')?.value || '';
@@ -3825,10 +4104,41 @@
             return showErr('Pilih minimal satu unit kerja untuk peran ' + (peran === 'KOORDINATOR' ? 'Koordinator/SPV' : 'Manajer') + '.');
           }
           errEl.hidden = true;
-          return { nik, nama, password, peran, unitIds, unitHome };
+          return { mode: 'SINGLE', nik, nama, password, peran, unitIds, unitHome };
         },
       });
       if (!res) return;
+      if (res.mode === 'IMPORT') {
+        if (live) {
+          return writeAction('admin/users/import', 'POST', {
+            default_password: res.defaultPassword,
+            users: res.rows.map(({ nik, nama, password }) => ({ nik, nama, password })),
+          }, '', (out) => {
+            const totalSkipped = (out.skipped?.length || 0) + res.skippedCount;
+            const msg = totalSkipped
+              ? `${out.imported} pengguna berhasil diimpor, ${totalSkipped} baris dilewati.`
+              : `${out.imported} pengguna berhasil diimpor.`;
+            showToast(msg, 'success');
+            renderRoute();
+          });
+        }
+        res.rows.forEach((row, idx) => {
+          state.users.push({
+            id: `usr-${Date.now()}-${idx}`,
+            nik: row.nik,
+            nama: row.nama,
+            unit_home: 'Staf RS',
+            is_super_admin: false,
+            is_active: true,
+            must_change_password: true,
+            failed_login: 0,
+            locked_until: null,
+          });
+        });
+        showToast(`${res.rows.length} pengguna berhasil diimpor.`, 'success');
+        viewAdminPengguna();
+        return;
+      }
       if (live) {
         return writeAction('admin/users', 'POST', {
           nik: res.nik,
@@ -3860,7 +4170,10 @@
       }
       showToast(`Pengguna ${res.nama} (${res.nik}) tersimpan.`, 'success');
       viewAdminPengguna();
-    };
+    }
+
+    document.getElementById('add-user-btn').onclick = () => openAddUserModal('SINGLE');
+    document.getElementById('import-user-btn').onclick = () => openAddUserModal('IMPORT');
 
     main.querySelectorAll('[data-user-reset]').forEach((btn) => {
       btn.onclick = () => {

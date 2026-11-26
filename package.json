@@ -8,6 +8,7 @@
     "build": "next build --webpack",
     "start": "next start --hostname 127.0.0.1",
     "check:google": "node scripts/check-google.mjs",
+    "sync:google": "node scripts/sync-google-readable.mjs",
     "verify:mockup": "node scripts/verify-mockup.mjs",
     "verify:app": "node scripts/verify-app.mjs"
   },

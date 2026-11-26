@@ -2195,6 +2195,28 @@ body {
   width: min(580px, calc(100vw - 24px));
 }
 
+.import-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.import-preview-wrap {
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-page);
+  margin-top: 8px;
+}
+
+.import-preview-wrap .data-table th,
+.import-preview-wrap .data-table td {
+  padding: 7px 10px;
+  font-size: var(--text-sm);
+}
+
 .unit-checklist {
   max-height: 190px;
   overflow-y: auto;

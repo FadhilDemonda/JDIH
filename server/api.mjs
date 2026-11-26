@@ -1,7 +1,7 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { checkFile, fileStream, loadSeed, loadState, saveChunk, saveState, serialize } from './store.mjs';
-import { backupSpreadsheet, beginCloudUpload, cloudEnabled, ensureUnitFolder, removeEmptyUnitFolder, renameUnitFolder, trashCloudFile } from './google-store.mjs';
+import { backupSpreadsheet, beginCloudUpload, cloudEnabled, ensureUnitFolder, removeEmptyUnitFolder, renameUnitFolder, syncDocumentDriveFolders, trashCloudFile } from './google-store.mjs';
 import { renderDocumentPdf } from './pdf.mjs';
 
 const MINUTE = 60_000;
@@ -12,6 +12,7 @@ const EDITABLE = ['DRAF', 'DIKEMBALIKAN'];
 const PENDING = 'MENUNGGU_VERIFIKASI';
 const APPROVED = 'DISETUJUI';
 const NIK = /^\d{4}\.\d{2}\.\d{2}$/;
+const DEFAULT_USER_PASSWORD = 'annisa123';
 const COOKIE = 'jdih_session';
 const DUMMY_HASH = '$2b$10$fu/qFj7vaqU2YPPHjE3uz.sUNWHsY3JzI4eDgsl4Yf2.bVuKcDVDG';
 const headers = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' };
@@ -37,6 +38,44 @@ const tokenHash = (value) => createHash('sha256').update(value).digest('hex');
 const normalize = (value) => (value || '').trim().replace(/\s+/g, ' ').toUpperCase();
 const json = (value, status = 200, extra = {}) => Response.json(value, { status, headers: { ...headers, ...extra } });
 
+function nextId(list, prefix, pad = 3) {
+  const re = new RegExp('^' + prefix + '-(\\d+)$');
+  let max = 0;
+  for (const item of list) {
+    const match = String(item?.id || '').match(re);
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return prefix + '-' + String(max + 1).padStart(pad, '0');
+}
+
+function makeOperationFingerprint(method, pathname, body) {
+  if (method === 'PUT') return `${method} ${pathname} (${body.length} bytes)`;
+  let summary = '';
+  if (body?.length) {
+    try {
+      const parsed = JSON.parse(body.toString('utf8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const clean = { ...parsed };
+        if ('password' in clean) clean.password = '[REDACTED]';
+        if ('current' in clean) clean.current = '[REDACTED]';
+        if ('default_password' in clean) clean.default_password = '[REDACTED]';
+        if (Array.isArray(clean.users)) {
+          clean.users = clean.users.map((entry) =>
+            entry && typeof entry === 'object' && 'password' in entry
+              ? { ...entry, password: entry.password ? '[REDACTED]' : '' }
+              : entry);
+        }
+        summary = JSON.stringify(clean);
+      } else {
+        summary = body.toString('utf8');
+      }
+    } catch {
+      summary = `raw:${body.length}`;
+    }
+  }
+  return `${method} ${pathname}${summary ? ' ' + summary : ''}`.slice(0, 10000);
+}
+
 function textField(value, label, max, required = true) {
   invalid(typeof value === 'string' && value.length <= max && (!required || value.trim()), label + ' tidak valid.');
   return value.trim();
@@ -51,6 +90,14 @@ function validDate(value) {
   const date = new Date(value);
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
     && Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function normalizeNik(raw) {
+  const text = String(raw ?? '').trim();
+  if (NIK.test(text)) return text;
+  const digits = text.replace(/\D/g, '');
+  if (digits.length === 8) return `${digits.slice(0, 4)}.${digits.slice(4, 6)}.${digits.slice(6)}`;
+  return text;
 }
 
 async function initialize() {
@@ -80,7 +127,7 @@ async function initialize() {
         category.id === data.documents.find((doc) => doc.id === version.document_id).category_id).sections,
     }));
   } else {
-    data.users = [{ id: randomUUID(), nik, nama: process.env.JDIH_ADMIN_NAME || 'Super Admin',
+    data.users = [{ id: 'usr-001', nik, nama: process.env.JDIH_ADMIN_NAME || 'Super Admin',
       unit_home: 'DTO', is_super_admin: true, is_active: true, must_change_password: true,
       password_hash: await bcrypt.hash(password, 12) }];
   }
@@ -159,7 +206,7 @@ function snapshot(data, user) {
       .map((u) => user.is_super_admin || u.id === user.id ? safeUser(u) : { id: u.id, nama: u.nama }),
     userUnits: data.userUnits.filter((entry) => user.is_super_admin || (entry.user_id === user.id
       && data.units.some((unit) => unit.id === entry.unit_id && unit.is_active))),
-    units: data.units.map(({ drive_folder_id, ...unit }) => ({ ...unit, has_manager: managers(data, unit.id).some((entry) => entry.user_id !== user.id) })),
+    units: data.units.map(({ drive_folder_id, ...unit }) => ({ ...unit, has_manager: user.is_super_admin || managers(data, unit.id).some((entry) => entry.user_id !== user.id) })),
     categories: data.categories,
     documents: data.documents.filter((doc) => documentIds.has(doc.id)),
     versions: versions.map(safeVersion),
@@ -191,7 +238,7 @@ function authorizeReplay(data, user, route, parts, input) {
   if (route === 'versions') {
     const version = find(data.versions, id, 'Versi');
     const doc = find(data.documents, version.document_id, 'Dokumen');
-    if (action === 'review') allowed(canReview(data, user, version, doc) && version.created_by !== user.id);
+    if (action === 'review') allowed(canReview(data, user, version, doc) && (user.is_super_admin || version.created_by !== user.id));
     else allowed(hasRole(data, user, 'KOORDINATOR', doc.unit_id));
   }
 }
@@ -204,7 +251,7 @@ function draft(data, doc, user, method, from) {
     ? structuredClone(from?.sections || Object.fromEntries(template.map(({ code, type }) => [code, type === 'list' ? [''] : ''])))
     : {};
   const version = {
-    id: randomUUID(), document_id: doc.id, revisi_label: from ? String(Math.max(...numbers) + 1).padStart(2, '0') : '00',
+    id: nextId(data.versions, 'ver'), document_id: doc.id, revisi_label: from ? String(Math.max(...numbers) + 1).padStart(2, '0') : '00',
     judul: from?.judul || '', nomor: from?.nomor || '', kata_kunci: from?.kata_kunci || '',
     tgl_dokumen: today(), tgl_berlaku: today(), ringkasan_perubahan: '', metode: method,
     status: 'DRAF', edit_version: 1, created_by: user.id, submitted_at: null, approved_at: null,
@@ -246,7 +293,7 @@ function updateDraft(version, input) {
 }
 
 function reviewLog(data, version, user, action, note = '', annotations = []) {
-  data.reviewLogs.push({ id: randomUUID(), version_id: version.id, user_id: user.id, aksi: action, catatan: note,
+  data.reviewLogs.push({ id: nextId(data.reviewLogs, 'rlog'), version_id: version.id, user_id: user.id, aksi: action, catatan: note,
     ...(annotations.length ? { annotations } : {}), created_at: clock() });
 }
 
@@ -271,11 +318,11 @@ function validateAnnotations(version, value) {
 }
 
 function documentLog(data, doc, user, action, reason = '') {
-  data.documentLogs.push({ id: randomUUID(), document_id: doc.id, user_id: user.id, aksi: action, alasan: reason, created_at: clock() });
+  data.documentLogs.push({ id: nextId(data.documentLogs, 'dlog'), document_id: doc.id, user_id: user.id, aksi: action, alasan: reason, created_at: clock() });
 }
 
 function notify(data, userId, type, target, url, message) {
-  data.notifications.push({ id: randomUUID(), user_id: userId, jenis: type, target_id: target, url,
+  data.notifications.push({ id: nextId(data.notifications, 'ntf'), user_id: userId, jenis: type, target_id: target, url,
     pesan: message, is_read: false, is_relevant: true, created_at: clock() });
 }
 
@@ -321,7 +368,7 @@ async function admin(data, user, method, parts, input) {
       return {};
     }
     if (method === 'POST' || method === 'PATCH') {
-      const unit = method === 'POST' ? { id: randomUUID(), is_active: true } : find(list, id, 'Unit');
+      const unit = method === 'POST' ? { id: nextId(list, 'u', 2), is_active: true } : find(list, id, 'Unit');
       const kode = input.kode === undefined ? unit.kode : textField(input.kode, 'Kode unit', 20).toUpperCase();
       const nama = input.nama === undefined ? unit.nama : textField(input.nama, 'Nama unit', 160);
       invalid(kode && nama, 'Kode dan nama unit wajib diisi.');
@@ -339,11 +386,76 @@ async function admin(data, user, method, parts, input) {
     }
   }
   if (collection === 'users') {
+    if (method === 'POST' && id === 'import') {
+      const defaultPassword = (typeof input.default_password === 'string' && input.default_password.trim())
+        ? input.default_password.trim()
+        : DEFAULT_USER_PASSWORD;
+      validPassword(defaultPassword);
+      invalid(Array.isArray(input.users) && input.users.length >= 1 && input.users.length <= 500,
+        'Daftar pengguna impor wajib berisi 1 hingga 500 baris.');
+      const existingNiks = new Set(list.map((u) => u.nik));
+      const validRows = [];
+      const skipped = [];
+      for (let index = 0; index < input.users.length; index += 1) {
+        const item = input.users[index];
+        const row = index + 1;
+        const nik = normalizeNik(item?.nik);
+        const nama = typeof item?.nama === 'string' ? item.nama.trim() : '';
+        const password = (typeof item?.password === 'string' && item.password.trim())
+          ? item.password.trim()
+          : defaultPassword;
+        if (!NIK.test(nik)) {
+          skipped.push({ row, nik, nama, reason: 'Format NIK wajib 0000.00.00' });
+          continue;
+        }
+        if (!nama || nama.length > 180) {
+          skipped.push({ row, nik, nama, reason: 'Nama pengguna wajib diisi (maks 180 karakter)' });
+          continue;
+        }
+        if (existingNiks.has(nik)) {
+          skipped.push({ row, nik, nama, reason: 'NIK sudah terdaftar atau duplikat' });
+          continue;
+        }
+        if (password.length < 8 || Buffer.byteLength(password) > 72 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+          skipped.push({ row, nik, nama, reason: 'Password minimal 8 karakter kombinasi huruf dan angka' });
+          continue;
+        }
+        existingNiks.add(nik);
+        validRows.push({ nik, nama, password });
+      }
+      invalid(validRows.length > 0, skipped[0]
+        ? 'Tidak ada data valid untuk diimpor (' + skipped[0].reason + ').'
+        : 'Tidak ada data valid untuk diimpor.');
+      const hashByPassword = new Map();
+      for (const row of validRows) {
+        if (!hashByPassword.has(row.password)) {
+          hashByPassword.set(row.password, await bcrypt.hash(row.password, 12));
+        }
+      }
+      const createdIds = [];
+      for (const row of validRows) {
+        const profile = {
+          id: nextId(list, 'usr'),
+          nik: row.nik,
+          nama: row.nama,
+          unit_home: 'Staf RS',
+          is_active: true,
+          is_super_admin: false,
+          must_change_password: true,
+          password_hash: hashByPassword.get(row.password),
+        };
+        list.push(profile);
+        createdIds.push(profile.id);
+      }
+      return { imported: createdIds.length, skipped, ids: createdIds };
+    }
     if (method === 'POST' && !id) {
       invalid(typeof input.nik === 'string' && NIK.test(input.nik), 'Format NIK wajib 0000.00.00.');
       conflict(!list.some((u) => u.nik === input.nik), 'NIK sudah terdaftar.');
       const nama = textField(input.nama, 'Nama pengguna', 180);
-      const password = input.password || 'Aa1-' + randomBytes(12).toString('base64url');
+      const password = (typeof input.password === 'string' && input.password.trim())
+        ? input.password.trim()
+        : DEFAULT_USER_PASSWORD;
       validPassword(password);
       const peran = input.peran;
       if (peran !== undefined) {
@@ -365,12 +477,12 @@ async function admin(data, user, method, parts, input) {
       const unitHome = typeof input.unit_home === 'string' && input.unit_home.trim()
         ? textField(input.unit_home, 'Unit utama', 160)
         : (assignedUnits.length ? assignedUnits.map((unit) => unit.nama).join(', ').slice(0, 160) : 'Staf RS');
-      const profile = { id: randomUUID(), nik: input.nik, nama, unit_home: unitHome,
+      const profile = { id: nextId(list, 'usr'), nik: input.nik, nama, unit_home: unitHome,
         is_active: true, is_super_admin: isSuperAdmin,
         must_change_password: true, password_hash: await bcrypt.hash(password, 12) };
       list.push(profile);
       for (const unit of assignedUnits) {
-        data.userUnits.push({ id: randomUUID(), user_id: profile.id, unit_id: unit.id, peran, is_active: true });
+        data.userUnits.push({ id: nextId(data.userUnits, 'uu'), user_id: profile.id, unit_id: unit.id, peran, is_active: true });
       }
       return { id: profile.id, temporaryPassword: password };
     }
@@ -412,7 +524,7 @@ async function admin(data, user, method, parts, input) {
       invalid(target.is_active && unit.is_active && ['KOORDINATOR', 'MANAJER'].includes(input.peran), 'Penugasan tidak valid.');
       conflict(!list.some((entry) => entry.is_active && entry.user_id === target.id && entry.unit_id === unit.id),
         'Pengguna sudah memiliki peran di unit tersebut.');
-      list.push({ id: randomUUID(), user_id: target.id, unit_id: unit.id, peran: input.peran, is_active: true });
+      list.push({ id: nextId(list, 'uu'), user_id: target.id, unit_id: unit.id, peran: input.peran, is_active: true });
       return {};
     }
     if (method === 'DELETE') {
@@ -463,7 +575,7 @@ async function documents(data, user, method, parts, input, url) {
     find(data.categories, input.category_id, 'Jenis dokumen');
     allowed(hasRole(data, user, 'KOORDINATOR', unit.id));
     invalid(unit.is_active && ['TEMPLATE', 'UPLOAD'].includes(input.metode), 'Unit atau metode tidak valid.');
-    const doc = { id: randomUUID(), unit_id: unit.id, category_id: input.category_id, status_aktif: 'AKTIF',
+    const doc = { id: nextId(data.documents, 'doc'), unit_id: unit.id, category_id: input.category_id, status_aktif: 'AKTIF',
       alasan_tidak_aktif: '', tgl_tidak_aktif: '', created_by: user.id };
     data.documents.push(doc);
     return { documentId: doc.id, versionId: draft(data, doc, user, input.metode).id };
@@ -513,7 +625,7 @@ async function startUpload(data, user, version, doc, input) {
   data.uploads = data.uploads.filter((file) => file.versionId !== version.id || file.expires > now() || file.ready);
   const existing = data.uploads.filter((file) => file.versionId === version.id && !file.ready);
   conflict(existing.length < 20, 'Terlalu banyak unggahan tertunda.');
-  const file = { id: randomUUID(), versionId: version.id, userId: user.id, nama: name, size: input.size,
+  const file = { id: nextId(data.uploads, 'att'), versionId: version.id, userId: user.id, nama: name, size: input.size,
     ukuran: Math.max(1, Math.round(input.size / 1024)) + ' KB', mime: FILE_TYPES[extension], kind,
     offset: 0, offsets: [], chunk_hashes: {}, expires: now() + 60 * MINUTE, ready: false };
   if (cloudEnabled) await beginCloudUpload(file, doc, data);
@@ -560,7 +672,7 @@ async function versionFiles(data, user, version, doc, method, id, input, request
   }
   if (method === 'PUT' && id) {
     const file = find(data.uploads, id, 'Unggahan');
-    allowed(file.versionId === version.id && file.userId === user.id);
+    allowed(file.versionId === version.id && (user.is_super_admin || file.userId === user.id));
     conflict(isEditableDraft || (isApprovedTemplate && file.kind === 'PDF'), 'Versi terkunci.');
     conflict(file.expires > now() || file.ready, 'Sesi unggah kedaluwarsa.');
     const rawOffset = request.headers.get('upload-offset') || '';
@@ -571,7 +683,9 @@ async function versionFiles(data, user, version, doc, method, id, input, request
       (offset + bytes.length === file.size || bytes.length % (256 * 1024) === 0), 'Potongan unggahan tidak valid.');
     const digest = tokenHash(bytes);
     if (offset < file.offset && file.offsets.includes(offset)) {
-      conflict(file.chunk_hashes?.[offset] === digest, 'Isi potongan berbeda dari unggahan sebelumnya.');
+      if (file.chunk_hashes && Object.hasOwn(file.chunk_hashes, offset)) {
+        conflict(file.chunk_hashes[offset] === digest, 'Isi potongan berbeda dari unggahan sebelumnya.');
+      }
       return { offset: file.offset, ready: file.ready };
     }
     conflict(offset === file.offset && !file.ready, 'Posisi unggahan berubah.');
@@ -587,6 +701,7 @@ async function versionFiles(data, user, version, doc, method, id, input, request
     file.offset += bytes.length;
     if (file.offset === file.size) {
       file.ready = true;
+      file.upload_url = '';
       if (file.kind !== 'LAMPIRAN') version.attachments = version.attachments.filter((g) => g.kind !== file.kind);
       version.attachments.push({ id: file.id, nama: file.nama, ukuran: file.ukuran, mime: file.mime, kind: file.kind });
       if (isApprovedTemplate) documentLog(data, doc, user, 'UNGGAH_SCAN', file.nama);
@@ -626,7 +741,7 @@ async function versions(data, user, method, parts, input, request, url) {
   if (method === 'GET' && !action) return safeVersion(version);
 
   if (method === 'POST' && action === 'review') {
-    allowed(canReview(data, user, version, doc) && version.created_by !== user.id);
+    allowed(canReview(data, user, version, doc) && (user.is_super_admin || version.created_by !== user.id));
     conflict(version.status === PENDING, 'Pengajuan sudah diproses atau ditarik.');
     invalid(['SETUJUI', 'KEMBALIKAN'].includes(input.aksi), 'Keputusan tidak valid.');
     const approved = input.aksi === 'SETUJUI';
@@ -654,6 +769,7 @@ async function versions(data, user, method, parts, input, request, url) {
     else version.return_note = note;
     reviewLog(data, version, user, input.aksi, note, annotations);
     closeNotices(data, version.id);
+    if (approved && cloudEnabled) await syncDocumentDriveFolders(doc, version, data);
     const recipientIds = new Set([version.created_by, ...data.userUnits.filter((entry) => entry.is_active
       && entry.unit_id === doc.unit_id && entry.peran === 'KOORDINATOR').map((entry) => entry.user_id)]);
     for (const recipientId of recipientIds) {
@@ -680,6 +796,7 @@ async function versions(data, user, method, parts, input, request, url) {
   }
   if (method === 'PATCH' && !action) {
     updateDraft(version, input);
+    if (cloudEnabled) await syncDocumentDriveFolders(doc, version, data);
     return { version: safeVersion(version), numberConflict: Boolean(version.nomor && checkNumber(data, version)) };
   }
   if (method === 'POST' && action === 'submit') {
@@ -688,14 +805,17 @@ async function versions(data, user, method, parts, input, request, url) {
       validDate(version.tgl_dokumen) && validDate(version.tgl_berlaku), 'Judul, nomor, label revisi, dan tanggal wajib diisi.');
     invalid(!approvedVersions(data, doc).length || version.ringkasan_perubahan.trim(), 'Ringkasan perubahan wajib diisi.');
     const reviewers = managers(data, doc.unit_id).filter((entry) => entry.user_id !== user.id);
-    invalid(reviewers.length, 'Manajer unit belum disetting, hubungi tim DTO.');
+    invalid(user.is_super_admin || reviewers.length, 'Manajer unit belum disetting, hubungi tim DTO.');
     conflict(!checkNumber(data, version, true), 'Nomor sudah dipakai dokumen lain.');
     await verifyPrimaryFile(data, version);
     version.status = PENDING;
     version.submitted_at = clock();
     version.return_note = '';
     reviewLog(data, version, user, 'AJUKAN');
-    for (const entry of reviewers) notify(data, entry.user_id, 'PENGAJUAN', version.id,
+    if (cloudEnabled) await syncDocumentDriveFolders(doc, version, data);
+    const reviewerIds = new Set(reviewers.map((entry) => entry.user_id));
+    if (user.is_super_admin && reviewerIds.size === 0) reviewerIds.add(user.id);
+    for (const reviewerId of reviewerIds) notify(data, reviewerId, 'PENGAJUAN', version.id,
       '#/verifikasi/' + version.id, 'Pengajuan: ' + version.judul + ' oleh ' + user.nama + '.');
     return {};
   }
@@ -846,8 +966,8 @@ export async function handleApi(request, [route, ...parts]) {
 
       const idempotency = request.headers.get('idempotency-key');
       if (idempotency) invalid(/^[\w-]{1,128}$/.test(idempotency), 'Idempotency-Key tidak valid.');
-      const operationId = !read && idempotency && tokenHash(user.id + ':' + idempotency);
-      const fingerprint = operationId && tokenHash(method + url.pathname + tokenHash(body));
+      const operationId = !read && idempotency && (user.id + ':' + idempotency);
+      const fingerprint = operationId && makeOperationFingerprint(method, url.pathname, body);
       const existing = operationId && data.operations[operationId];
       if (existing && existing.expires > now()) {
         conflict(existing.fingerprint === fingerprint, 'Idempotency-Key sudah dipakai untuk permintaan lain.');
@@ -861,7 +981,7 @@ export async function handleApi(request, [route, ...parts]) {
       if (operationId) {
         for (const [id, entry] of Object.entries(data.operations)) if (entry.expires <= now()) delete data.operations[id];
         const { temporaryPassword, ...replay } = result;
-        data.operations[operationId] = { fingerprint, result: replay, expires: now() + 24 * 60 * MINUTE };
+        data.operations[operationId] = { user_id: user.id, aksi: method + ' ' + url.pathname, fingerprint, result: replay, expires: now() + 24 * 60 * MINUTE };
       }
       const refresh = session.expires - now() < 29 * MINUTE;
       if (refresh) {

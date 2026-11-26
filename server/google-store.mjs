@@ -14,6 +14,8 @@ let access;
 let leaseUntil = 0;
 let original;
 let sheetProperties;
+let originalHeaders = null;
+let originalColumnCounts = null;
 let localTableCache = null;
 let localAuthCache = null;
 
@@ -34,18 +36,18 @@ const tables = {
 const columns = {
   Users: 'id nik nama unit_home is_super_admin is_active must_change_password password_hash',
   Units: 'id kode nama drive_folder_id is_active',
-  User_Units: 'id user_id unit_id peran is_active',
+  User_Units: 'id user_id nama_user unit_id nama_unit peran is_active',
   Categories: 'id kode label contoh_nomor template_version urutan sections',
-  Documents: 'id unit_id category_id status_aktif alasan_tidak_aktif tgl_tidak_aktif created_by',
-  Document_Versions: 'id document_id revisi_label judul nomor tgl_dokumen tgl_berlaku kata_kunci ringkasan_perubahan metode status template_version template_sections edit_version created_by submitted_at approved_at approved_by return_note attachment_ids',
+  Documents: 'id unit_id nama_unit category_id jenis_dokumen status_aktif alasan_tidak_aktif tgl_tidak_aktif created_by created_by_id',
+  Document_Versions: 'id document_id revisi_label judul nomor tgl_dokumen tgl_berlaku kata_kunci ringkasan_perubahan metode status template_version template_sections edit_version created_by created_by_id submitted_at approved_at approved_by approved_by_id return_note attachment_ids',
   Version_Sections: 'id version_id section_code urut isi',
-  Attachments: 'id versionId userId nama size ukuran mime kind offset offsets expires ready drive_id upload_url chunk_hashes',
-  Review_Log: 'id version_id user_id aksi catatan created_at annotations',
-  Document_Log: 'id document_id user_id aksi alasan created_at',
-  Notifications: 'id user_id jenis target_id url pesan is_read is_relevant created_at',
-  Operations: 'id fingerprint result expires',
+  Attachments: 'id versionId userId nama_user nama size ukuran mime kind offset offsets expires ready drive_id upload_url',
+  Review_Log: 'id version_id user_id nama_user aksi catatan created_at annotations',
+  Document_Log: 'id document_id user_id nama_user aksi alasan created_at',
+  Notifications: 'id user_id nama_user jenis target_id url pesan is_read is_relevant created_at',
+  Operations: 'id user_id nama_user aksi fingerprint result expires',
 };
-const jsonFields = new Set(['sections', 'template_sections', 'attachment_ids', 'offsets', 'chunk_hashes', 'result', 'annotations']);
+const jsonFields = new Set(['sections', 'template_sections', 'attachment_ids', 'offsets', 'result', 'annotations']);
 
 const unavailable = (message) => Object.assign(new Error(message), { unavailable: true });
 
@@ -243,21 +245,48 @@ async function readTables() {
   const query = new URLSearchParams({ valueRenderOption: 'UNFORMATTED_VALUE' });
   for (const name of Object.keys(tables)) query.append('ranges', name);
   const { valueRanges } = await (await google(getSheetsUrl() + '/values:batchGet?' + query)).json();
+  originalHeaders = {};
+  originalColumnCounts = {};
   return Object.fromEntries(Object.keys(tables).map((name, index) => {
     const [header = [], ...rows] = valueRanges[index]?.values || [];
     if (header.length && header[0] !== 'id') throw unavailable('Header tab ' + name + ' tidak valid.');
+    originalHeaders[name] = header.join(' ');
+    originalColumnCounts[name] = header.length;
     const records = rows.filter((row) => row[0]).map((row) => Object.fromEntries(header.flatMap((field, i) =>
       !field || row[i] === undefined ? [] : [[field, jsonFields.has(field) && row[i] ? JSON.parse(row[i]) : row[i]]])));
     return [name, records];
   }));
 }
 
-export async function loadCloudState() {
-  const cached = await getTableCache();
-  original = cached || await readTables();
-  if (!original.Users.length) return null;
-  if (!cached) await setTableCache(original);
-  const state = Object.fromEntries(Object.entries(tables).map(([table, field]) => [field, structuredClone(original[table])]));
+function resolveUserRef(idVal, nameVal, usersById, userIdByName) {
+  if (idVal && usersById.has(idVal)) return idVal;
+  if (nameVal && usersById.has(nameVal)) return nameVal;
+  if (nameVal && userIdByName.has(nameVal)) return userIdByName.get(nameVal);
+  return idVal || nameVal || null;
+}
+
+function parseExpiry(value) {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value) return Date.parse(value) || 0;
+  return 0;
+}
+
+export function decodeCloudTables(rawTables) {
+  const state = Object.fromEntries(Object.entries(tables).map(([table, field]) => [field, structuredClone(rawTables[table] || [])]));
+  const usersById = new Map(state.users.map((user) => [user.id, user]));
+  const userIdByName = new Map(state.users.map((user) => [user.nama, user.id]));
+
+  state.userUnits = state.userUnits.map(({ nama_user, nama_unit, ...entry }) => entry);
+  state.documents = state.documents.map(({ nama_unit, jenis_dokumen, created_by_id, ...doc }) => ({
+    ...doc,
+    created_by: resolveUserRef(created_by_id, doc.created_by, usersById, userIdByName),
+  }));
+  state.uploads = state.uploads.map(({ nama_user, chunk_hashes, ...file }) => ({
+    ...file,
+    offsets: file.offsets || [],
+    chunk_hashes: {},
+    expires: parseExpiry(file.expires),
+  }));
   const files = new Map(state.uploads.map((file) => [file.id, file]));
   const sections = new Map();
   for (const { version_id, section_code, urut, isi } of state.sections) {
@@ -270,32 +299,105 @@ export async function loadCloudState() {
       group[section_code] = isi || '';
     }
   }
-  state.versions = state.versions.map(({ attachment_ids, ...version }) => ({
-    ...version, judul: version.judul || '', nomor: version.nomor || '', kata_kunci: version.kata_kunci || '',
+  state.versions = state.versions.map(({ attachment_ids, created_by_id, approved_by_id, ...version }) => ({
+    ...version,
+    created_by: resolveUserRef(created_by_id, version.created_by, usersById, userIdByName),
+    approved_by: (approved_by_id || version.approved_by)
+      ? resolveUserRef(approved_by_id, version.approved_by, usersById, userIdByName)
+      : null,
+    judul: version.judul || '',
+    nomor: version.nomor || '',
+    kata_kunci: version.kata_kunci || '',
     revisi_label: version.revisi_label || '',
-    ringkasan_perubahan: version.ringkasan_perubahan || '', sections: sections.get(version.id) || {},
+    ringkasan_perubahan: version.ringkasan_perubahan || '',
+    sections: sections.get(version.id) || {},
     attachments: (attachment_ids || []).map((id) => files.get(id)).filter(Boolean)
       .map(({ id, nama, ukuran, mime, kind }) => ({ id, nama, ukuran, mime, kind })),
   }));
   delete state.sections;
-  const authRow = state.operations.find((operation) => operation.id === '__auth__');
+  state.reviewLogs = state.reviewLogs.map(({ nama_user, ...entry }) => entry);
+  state.documentLogs = state.documentLogs.map(({ nama_user, ...entry }) => entry);
+  state.notifications = state.notifications.map(({ nama_user, ...entry }) => entry);
   state.operations = Object.fromEntries(
-    state.operations.filter((operation) => operation.id !== '__auth__').map(({ id, ...operation }) => [id, operation]),
+    state.operations
+      .filter((operation) => operation.id !== '__auth__')
+      .map(({ id, nama_user, ...operation }) => [id, { ...operation, expires: parseExpiry(operation.expires) }]),
   );
+  return state;
+}
+
+export async function loadCloudState() {
+  const cached = await getTableCache();
+  original = cached || await readTables();
+  if (!original.Users.length) return null;
+  if (!cached) await setTableCache(original);
+  const state = decodeCloudTables(original);
+  const authRow = original.Operations.find((operation) => operation.id === '__auth__');
   const auth = sheetsAuthMode() ? (authRow?.result || { sessions: {}, attempts: {} }) : await loadCloudAuth();
   return { ...state, ...auth };
 }
 
-function encodeTables(state) {
-  const data = Object.fromEntries(Object.entries(tables).map(([table, field]) => [table, state[field]]));
-  data.Document_Versions = state.versions.map(({ sections, attachments, ...version }) =>
-    ({ ...version, attachment_ids: attachments.map(({ id }) => id) }));
-  data.Version_Sections = state.versions.flatMap((version) => Object.entries(version.sections).flatMap(([code, entry]) =>
+export function encodeTables(state) {
+  const userNameById = new Map((state.users || []).map((user) => [user.id, user.nama]));
+  const unitNameById = new Map((state.units || []).map((unit) => [unit.id, unit.nama]));
+  const categoryLabelById = new Map((state.categories || []).map((category) => [category.id, category.label]));
+
+  const data = Object.fromEntries(Object.entries(tables).map(([table, field]) => [table, state[field] || []]));
+  data.User_Units = (state.userUnits || []).map((entry) => ({
+    ...entry,
+    nama_user: userNameById.get(entry.user_id) || '',
+    nama_unit: unitNameById.get(entry.unit_id) || '',
+  }));
+  data.Documents = (state.documents || []).map((doc) => ({
+    ...doc,
+    nama_unit: unitNameById.get(doc.unit_id) || '',
+    jenis_dokumen: categoryLabelById.get(doc.category_id) || '',
+    created_by_id: doc.created_by || '',
+    created_by: userNameById.get(doc.created_by) || doc.created_by || '',
+  }));
+  data.Document_Versions = (state.versions || []).map(({ sections, attachments, ...version }) => ({
+    ...version,
+    created_by_id: version.created_by || '',
+    created_by: userNameById.get(version.created_by) || version.created_by || '',
+    ...(version.approved_by
+      ? {
+          approved_by_id: version.approved_by,
+          approved_by: userNameById.get(version.approved_by) || version.approved_by,
+        }
+      : {}),
+    attachment_ids: (attachments || []).map(({ id }) => id),
+  }));
+  data.Version_Sections = (state.versions || []).flatMap((version) => Object.entries(version.sections || {}).flatMap(([code, entry]) =>
     (Array.isArray(entry) ? entry : [entry]).map((isi, i) => ({ id: version.id + ':' + code + ':' + i,
       version_id: version.id, section_code: code, urut: Array.isArray(entry) ? i + 1 : 0, isi }))));
-  data.Operations = Object.entries(state.operations).map(([id, record]) => ({ id, ...record }));
+  data.Attachments = (state.uploads || []).map(({ chunk_hashes, ...file }) => ({
+    ...file,
+    nama_user: userNameById.get(file.userId) || '',
+    expires: file.expires ? new Date(file.expires).toISOString() : '',
+    upload_url: file.ready ? '' : (file.upload_url || ''),
+  }));
+  data.Review_Log = (state.reviewLogs || []).map((entry) => ({
+    ...entry,
+    nama_user: userNameById.get(entry.user_id) || '',
+  }));
+  data.Document_Log = (state.documentLogs || []).map((entry) => ({
+    ...entry,
+    nama_user: userNameById.get(entry.user_id) || '',
+  }));
+  data.Notifications = (state.notifications || []).map((entry) => ({
+    ...entry,
+    nama_user: userNameById.get(entry.user_id) || '',
+  }));
+  const nowMs = Date.now();
+  data.Operations = Object.entries(state.operations || {})
+    .filter(([, record]) => record && (!record.expires || record.expires > nowMs))
+    .map(([id, record]) => ({
+      id,
+      ...record,
+      nama_user: userNameById.get(record.user_id) || '',
+      expires: record.expires ? new Date(record.expires).toISOString() : '',
+    }));
   if (sheetsAuthMode()) {
-    const nowMs = Date.now();
     const activeSessions = Object.fromEntries(
       Object.entries(state.sessions || {}).filter(([, entry]) => entry && entry.expires > nowMs),
     );
@@ -304,9 +406,12 @@ function encodeTables(state) {
     );
     data.Operations.push({
       id: '__auth__',
+      user_id: '',
+      nama_user: 'Sistem',
+      aksi: 'AUTH_STATE',
       fingerprint: 'auth',
       result: { sessions: activeSessions, attempts: activeAttempts },
-      expires: 0,
+      expires: '',
     });
   }
   return Object.fromEntries(Object.entries(data).map(([table, records]) => [table, records.map((record) =>
@@ -320,30 +425,46 @@ function cell(value) {
   return { userEnteredValue: { stringValue: typeof value === 'string' ? value : JSON.stringify(value) } };
 }
 
-export async function saveCloudState(state) {
+export async function saveCloudState(state, { forceAll = false } = {}) {
   const data = encodeTables(state);
   const changed = Object.keys(tables).filter((table) =>
-    !original?.Users.length || JSON.stringify(original[table]) !== JSON.stringify(data[table]));
+    forceAll || !original?.Users.length || (originalHeaders && originalHeaders[table] !== columns[table])
+    || JSON.stringify(original[table]) !== JSON.stringify(data[table]));
   if (changed.length) {
     await ensureTables();
     const requests = changed.flatMap((table) => {
       const { sheetId, gridProperties } = sheetProperties[table];
       const header = columns[table].split(' ');
-      const rows = [header, ...data[table].map((record) => header.map((field) => record[field]))];
+      const endColumnIndex = Math.max(header.length, originalColumnCounts?.[table] || 0);
+      const padRow = (row) => Array.from({ length: endColumnIndex }, (_, i) => row[i]);
+      const rows = [padRow(header), ...data[table].map((record) => padRow(header.map((field) => record[field])))];
       const endRowIndex = Math.max(rows.length, (original?.[table]?.length || 0) + 1);
-      const endColumnIndex = header.length;
-      const requests = [];
-      if (endRowIndex > gridProperties.rowCount) requests.push({ appendDimension: {
-        sheetId, dimension: 'ROWS', length: endRowIndex - gridProperties.rowCount + 100 } });
-      requests.push({ updateCells: {
+      const batch = [];
+      if (endRowIndex > gridProperties.rowCount) {
+        const delta = endRowIndex - gridProperties.rowCount + 100;
+        batch.push({ appendDimension: { sheetId, dimension: 'ROWS', length: delta } });
+        gridProperties.rowCount += delta;
+      }
+      if (endColumnIndex > gridProperties.columnCount) {
+        const delta = endColumnIndex - gridProperties.columnCount;
+        batch.push({ appendDimension: { sheetId, dimension: 'COLUMNS', length: delta } });
+        gridProperties.columnCount += delta;
+      }
+      batch.push({ updateCells: {
         range: { sheetId, startRowIndex: 0, startColumnIndex: 0, endRowIndex, endColumnIndex },
         rows: rows.map((row) => ({ values: row.map(cell) })), fields: 'userEnteredValue',
       } });
-      return requests;
+      return batch;
     });
     await clearTableCache();
     await post(getSheetsUrl() + ':batchUpdate', { requests });
     original = data;
+    originalHeaders ||= {};
+    originalColumnCounts ||= {};
+    for (const table of changed) {
+      originalHeaders[table] = columns[table];
+      originalColumnCounts[table] = columns[table].split(' ').length;
+    }
     await setTableCache(data).catch(() => {});
   }
   if (state.authDirty && !sheetsAuthMode()) {
@@ -356,30 +477,103 @@ function driveQuery(value) {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
+export function sanitizeDriveName(value, fallback = 'Tanpa Nama') {
+  const cleaned = String(value || '')
+    .replace(/[\\/:*?"<>|\r\n\t]+/g, ' - ')
+    .replace(/\s+/g, ' ')
+    .replace(/(?:\s*-\s*){2,}/g, ' - ')
+    .replace(/^[\s.-]+|[\s.-]+$/g, '')
+    .slice(0, 120)
+    .trim();
+  return cleaned || fallback;
+}
+
+export function unitFolderName(unit) {
+  const kode = String(unit?.kode || '').trim();
+  const nama = String(unit?.nama || '').trim();
+  if (!kode) return sanitizeDriveName(nama, 'Unit');
+  if (!nama || kode.toUpperCase() === nama.toUpperCase()) return sanitizeDriveName(nama || kode, 'Unit');
+  return sanitizeDriveName(kode + ' - ' + nama, 'Unit');
+}
+
+export function documentFolderName(doc, ver, category) {
+  const nomor = String(ver?.nomor || '').trim();
+  const judul = String(ver?.judul || '').trim();
+  const raw = (nomor && judul) ? (nomor + ' - ' + judul)
+    : (judul || nomor || ((category?.label || 'Dokumen') + ' Baru'));
+  return sanitizeDriveName(raw, 'Dokumen');
+}
+
+export function versionFolderName(ver) {
+  const label = String(ver?.revisi_label || '00').trim() || '00';
+  return sanitizeDriveName('Rev ' + label, 'Rev 00');
+}
+
 async function folder(parent, marker, name) {
   const query = new URLSearchParams({
     q: "'" + driveQuery(parent) + "' in parents and trashed = false and mimeType = '" + FOLDER +
       "' and appProperties has { key='jdih' and value='" + driveQuery(marker) + "' }",
-    fields: 'files(id)', includeItemsFromAllDrives: 'true', supportsAllDrives: 'true',
+    fields: 'files(id,name)', includeItemsFromAllDrives: 'true', supportsAllDrives: 'true',
   });
   const { files } = await (await google(drive + '?' + query)).json();
-  if (files.length) return files[0].id;
+  if (files.length) {
+    if (files[0].name !== name) {
+      await google(drive + '/' + encodeURIComponent(files[0].id) + '?supportsAllDrives=true', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+    }
+    return files[0].id;
+  }
   const result = await (await post(drive + '?supportsAllDrives=true&fields=id',
     { name, mimeType: FOLDER, parents: [parent], appProperties: { jdih: marker } })).json();
   return result.id;
 }
 
+async function renameFolderByMarker(parent, marker, name) {
+  const query = new URLSearchParams({
+    q: "'" + driveQuery(parent) + "' in parents and trashed = false and mimeType = '" + FOLDER +
+      "' and appProperties has { key='jdih' and value='" + driveQuery(marker) + "' }",
+    fields: 'files(id,name)', includeItemsFromAllDrives: 'true', supportsAllDrives: 'true',
+  });
+  const { files } = await (await google(drive + '?' + query)).json();
+  if (!files.length) return null;
+  if (files[0].name !== name) {
+    await google(drive + '/' + encodeURIComponent(files[0].id) + '?supportsAllDrives=true', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+  }
+  return files[0].id;
+}
+
 export async function ensureUnitFolder(unit) {
   if (!cloudEnabled) return undefined;
-  return unit.drive_folder_id || folder(getRootFolder(), 'unit-' + unit.kode, unit.kode + ' - ' + unit.nama);
+  return unit.drive_folder_id || folder(getRootFolder(), 'unit-' + unit.kode, unitFolderName(unit));
 }
 
 export async function renameUnitFolder(id, kode, nama) {
   if (!cloudEnabled) return;
   await google(drive + '/' + encodeURIComponent(id) + '?supportsAllDrives=true', {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: kode + ' - ' + nama, appProperties: { jdih: 'unit-' + kode } }),
+    body: JSON.stringify({ name: unitFolderName({ kode, nama }), appProperties: { jdih: 'unit-' + kode } }),
   });
+}
+
+export async function syncDocumentDriveFolders(doc, ver, state) {
+  if (!cloudEnabled || !doc) return;
+  const docVersionIds = new Set((state.versions || []).filter((v) => v.document_id === doc.id).map((v) => v.id));
+  const hasCloudUpload = (state.uploads || []).some((f) => f.drive_id && docVersionIds.has(f.versionId));
+  if (!hasCloudUpload) return;
+  const unit = (state.units || []).find((entry) => entry.id === doc.unit_id);
+  const category = (state.categories || []).find((entry) => entry.id === doc.category_id);
+  if (!unit?.drive_folder_id || !category) return;
+  const catFolderId = await renameFolderByMarker(unit.drive_folder_id, category.id, category.label);
+  if (!catFolderId) return;
+  const docFolderId = await renameFolderByMarker(catFolderId, doc.id, documentFolderName(doc, ver, category));
+  if (docFolderId && ver) {
+    await renameFolderByMarker(docFolderId, ver.id, versionFolderName(ver));
+  }
 }
 
 export async function removeEmptyUnitFolder(unit) {
@@ -398,10 +592,11 @@ export async function removeEmptyUnitFolder(unit) {
 export async function beginCloudUpload(file, doc, state) {
   const unit = state.units.find((entry) => entry.id === doc.unit_id);
   const category = state.categories.find((entry) => entry.id === doc.category_id);
+  const ver = state.versions.find((entry) => entry.id === file.versionId);
   unit.drive_folder_id = await ensureUnitFolder(unit);
   const type = await folder(unit.drive_folder_id, category.id, category.label);
-  const documentFolder = await folder(type, doc.id, doc.id);
-  const version = await folder(documentFolder, file.versionId, file.versionId);
+  const documentFolder = await folder(type, doc.id, documentFolderName(doc, ver, category));
+  const version = await folder(documentFolder, file.versionId, versionFolderName(ver));
   const { ids } = await (await google(drive + '/generateIds?count=1&space=drive')).json();
   file.drive_id = ids[0];
   const response = await google(upload + '?uploadType=resumable&supportsAllDrives=true', {
