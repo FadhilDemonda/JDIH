@@ -22,6 +22,7 @@ const getRootFolder = () => process.env.GOOGLE_DRIVE_ROOT_ID?.trim() || '';
 const getKey = () => 'jdih:' + getSpreadsheet();
 const getSheetsUrl = () => 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(getSpreadsheet());
 const redisEnabled = () => Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+const sheetsAuthMode = () => !redisEnabled() && process.env.VERCEL === '1';
 const authFile = () => path.join(path.resolve(process.env.JDIH_DATA_DIR || '.jdih'), 'cloud-auth.json');
 
 const tables = {
@@ -83,6 +84,7 @@ function loadIdentity() {
 }
 
 async function getTableCache() {
+  if (sheetsAuthMode()) return null;
   if (redisEnabled()) {
     const cached = await redis('GET', getKey() + ':tables');
     return cached ? JSON.parse(cached) : null;
@@ -95,6 +97,7 @@ async function getTableCache() {
 }
 
 async function setTableCache(data) {
+  if (sheetsAuthMode()) return;
   if (redisEnabled()) {
     await redis('SET', getKey() + ':tables', JSON.stringify(data), 'EX', 30);
     return;
@@ -103,6 +106,7 @@ async function setTableCache(data) {
 }
 
 async function clearTableCache() {
+  if (sheetsAuthMode()) return;
   if (redisEnabled()) {
     await redis('DEL', getKey() + ':tables');
     return;
@@ -145,9 +149,6 @@ export async function withCloudLock(work) {
   const rootFolder = getRootFolder();
   if (!spreadsheet || !rootFolder || process.env.JDIH_DEMO === '1') {
     throw unavailable('Konfigurasi Google Sheets dan Drive belum lengkap.');
-  }
-  if (process.env.VERCEL === '1' && !redisEnabled()) {
-    throw unavailable('Konfigurasi Upstash Redis wajib diisi untuk deployment Vercel.');
   }
   identity ||= loadIdentity();
   if (!redisEnabled()) {
@@ -277,8 +278,11 @@ export async function loadCloudState() {
       .map(({ id, nama, ukuran, mime, kind }) => ({ id, nama, ukuran, mime, kind })),
   }));
   delete state.sections;
-  state.operations = Object.fromEntries(state.operations.map(({ id, ...operation }) => [id, operation]));
-  const auth = await loadCloudAuth();
+  const authRow = state.operations.find((operation) => operation.id === '__auth__');
+  state.operations = Object.fromEntries(
+    state.operations.filter((operation) => operation.id !== '__auth__').map(({ id, ...operation }) => [id, operation]),
+  );
+  const auth = sheetsAuthMode() ? (authRow?.result || { sessions: {}, attempts: {} }) : await loadCloudAuth();
   return { ...state, ...auth };
 }
 
@@ -290,6 +294,21 @@ function encodeTables(state) {
     (Array.isArray(entry) ? entry : [entry]).map((isi, i) => ({ id: version.id + ':' + code + ':' + i,
       version_id: version.id, section_code: code, urut: Array.isArray(entry) ? i + 1 : 0, isi }))));
   data.Operations = Object.entries(state.operations).map(([id, record]) => ({ id, ...record }));
+  if (sheetsAuthMode()) {
+    const nowMs = Date.now();
+    const activeSessions = Object.fromEntries(
+      Object.entries(state.sessions || {}).filter(([, entry]) => entry && entry.expires > nowMs),
+    );
+    const activeAttempts = Object.fromEntries(
+      Object.entries(state.attempts || {}).filter(([, entry]) => entry && entry.expires > nowMs),
+    );
+    data.Operations.push({
+      id: '__auth__',
+      fingerprint: 'auth',
+      result: { sessions: activeSessions, attempts: activeAttempts },
+      expires: 0,
+    });
+  }
   return Object.fromEntries(Object.entries(data).map(([table, records]) => [table, records.map((record) =>
     Object.fromEntries(columns[table].split(' ').flatMap((field) => record[field] == null ? [] : [[field, record[field]]])))]));
 }
@@ -327,7 +346,7 @@ export async function saveCloudState(state) {
     original = data;
     await setTableCache(data).catch(() => {});
   }
-  if (state.authDirty) {
+  if (state.authDirty && !sheetsAuthMode()) {
     canWrite();
     await saveCloudAuth(state.sessions, state.attempts);
   }
