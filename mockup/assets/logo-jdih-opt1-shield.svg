@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title-opt1">
+  <title id="title-opt1">Logo JDIH RS AN-NISA - Konsep 1 Perisai Dokumen &amp; Centang Verifikasi</title>
+  <!-- Rounded square badge container -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="2"/>
+  <!-- Shield-document silhouette -->
+  <path d="M16 14C16 12.3431 17.3431 11 19 11H38L48 21V34.5C48 44.2 41.2 51.3 32 54C22.8 51.3 16 44.2 16 34.5V14Z" fill="#1F6E43"/>
+  <!-- Folded corner accent -->
+  <path d="M38 11L48 21H40.5C39.1193 21 38 19.8807 38 18.5V11Z" fill="#2D8A56"/>
+  <!-- Minimal document lines -->
+  <rect x="23" y="21" width="12" height="3.2" rx="1.6" fill="#E3F3EA"/>
+  <rect x="23" y="27.2" width="18" height="3.2" rx="1.6" fill="#E3F3EA" fill-opacity="0.72"/>
+  <!-- Verification checkmark badge -->
+  <circle cx="32" cy="40" r="8.5" fill="#FF6A2B"/>
+  <path d="M28.2 40.1L30.9 42.8L36.2 37.3" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

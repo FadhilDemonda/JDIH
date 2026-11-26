@@ -1,0 +1,7 @@
+.jdih/
+.env*
+!.env.example
+service-account*.json
+docs/*.json
+node_modules/
+.next/

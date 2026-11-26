@@ -1,0 +1,1609 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {
+    "project": "JDIH RS AN-NISA",
+    "source_corpus": [
+      "docs/PRD_JDIH.md",
+      "mockup/index.html"
+    ],
+    "generated_at": "2026-11-26T10:05:00+07:00",
+    "communities": {
+      "0": "Autentikasi dan Kontrol Akses RBAC",
+      "1": "Siklus Hidup dan Verifikasi Dokumen",
+      "2": "Arsitektur Data dan Infrastruktur",
+      "3": "Antarmuka dan Pengalaman Pengguna",
+      "4": "Tata Kelola, Seed Data, dan UAT"
+    }
+  },
+  "nodes": [
+    {
+      "id": "docs_prd_jdih_login_nik",
+      "label": "Login NIK (0000.00.00)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L109",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 0,
+      "community_name": "Autentikasi dan Kontrol Akses RBAC"
+    },
+    {
+      "id": "docs_prd_jdih_sesi_30_menit",
+      "label": "Sesi Cookie httpOnly 30 Menit",
+      "file_type": "concept",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L572",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 0,
+      "community_name": "Autentikasi dan Kontrol Akses RBAC"
+    },
+    {
+      "id": "docs_prd_jdih_penguncian_5x",
+      "label": "Penguncian Login 15 Menit (5x Gagal)",
+      "file_type": "rationale",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "Fitur 0 Edge Cases",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 0,
+      "community_name": "Autentikasi dan Kontrol Akses RBAC",
+      "rationale": "Mencegah brute-force password NIK; dapat dibuka oleh Super Admin via Reset Password."
+    },
+    {
+      "id": "docs_prd_jdih_role_super_admin",
+      "label": "Role Super Admin",
+      "file_type": "concept",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L530",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 0,
+      "community_name": "Autentikasi dan Kontrol Akses RBAC"
+    },
+    {
+      "id": "docs_prd_jdih_role_staf",
+      "label": "Role Staf",
+      "file_type": "concept",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L530",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 0,
+      "community_name": "Autentikasi dan Kontrol Akses RBAC"
+    },
+    {
+      "id": "docs_prd_jdih_role_koordinator",
+      "label": "Role Koordinator/SPV",
+      "file_type": "concept",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "Fitur 3 & Fitur 15",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 0,
+      "community_name": "Autentikasi dan Kontrol Akses RBAC"
+    },
+    {
+      "id": "docs_prd_jdih_role_manajer",
+      "label": "Role Manajer",
+      "file_type": "concept",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "Fitur 4 & Fitur 15",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 0,
+      "community_name": "Autentikasi dan Kontrol Akses RBAC"
+    },
+    {
+      "id": "docs_prd_jdih_rbac_unit_scope",
+      "label": "RBAC Per Peran dan Unit",
+      "file_type": "rationale",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "Fitur 15 & 4.7 Keamanan",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 0,
+      "community_name": "Autentikasi dan Kontrol Akses RBAC",
+      "rationale": "Pemisahan penyusun (Koordinator/SPV) dan pemeriksa (Manajer) dengan validasi ulang hak pada setiap permintaan server."
+    },
+    {
+      "id": "docs_prd_jdih_tab_users",
+      "label": "Tab Sheets Users",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.4 Tab Users",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 0,
+      "community_name": "Autentikasi dan Kontrol Akses RBAC"
+    },
+    {
+      "id": "docs_prd_jdih_tab_user_units",
+      "label": "Tab Sheets User_Units",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.4 Tab User_Units",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 0,
+      "community_name": "Autentikasi dan Kontrol Akses RBAC"
+    },
+    {
+      "id": "docs_prd_jdih_guard_403",
+      "label": "Penjaga Akses 403",
+      "file_type": "concept",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "Fitur 15 & Halaman /403",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 0,
+      "community_name": "Autentikasi dan Kontrol Akses RBAC"
+    },
+    {
+      "id": "docs_prd_jdih_jenis_dokumen",
+      "label": "Lima Jenis Dokumen Tetap",
+      "file_type": "concept",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "Fitur 5 & Lampiran B",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 1,
+      "community_name": "Siklus Hidup dan Verifikasi Dokumen"
+    },
+    {
+      "id": "docs_prd_jdih_buat_template",
+      "label": "Buat Dokumen dari Template",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L277",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 1,
+      "community_name": "Siklus Hidup dan Verifikasi Dokumen"
+    },
+    {
+      "id": "docs_prd_jdih_upload_chunked",
+      "label": "Upload Dokumen Resumable < 4 MB",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "Fitur 7 & 4.1",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 1,
+      "community_name": "Siklus Hidup dan Verifikasi Dokumen"
+    },
+    {
+      "id": "docs_prd_jdih_nomor_manual_unik",
+      "label": "Nomor Dokumen Manual dan Cek Unik",
+      "file_type": "rationale",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L606",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 1,
+      "community_name": "Siklus Hidup dan Verifikasi Dokumen",
+      "rationale": "Nomor dokumen bebas manual karena pola RS bervariasi, tetapi ternormalisasi wajib unik seluruh RS (409 on conflict)."
+    },
+    {
+      "id": "docs_prd_jdih_pengajuan_unit",
+      "label": "Pengajuan Unit (Ajukan, Tarik, Hapus Draf)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L336",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 1,
+      "community_name": "Siklus Hidup dan Verifikasi Dokumen"
+    },
+    {
+      "id": "docs_prd_jdih_verifikasi_manajer",
+      "label": "Verifikasi Manajer (Setujui / Kembalikan)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L369",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 1,
+      "community_name": "Siklus Hidup dan Verifikasi Dokumen"
+    },
+    {
+      "id": "docs_prd_jdih_keberlakuan_tanggal",
+      "label": "Keberlakuan Dihitung dari Tanggal (WIB)",
+      "file_type": "rationale",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L606",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 1,
+      "community_name": "Siklus Hidup dan Verifikasi Dokumen",
+      "rationale": "Status Berlaku, Berlaku mulai, dan Versi Sebelumnya dihitung dinamis agar revisi bertanggal masa depan tidak menggeser versi aktif saat ini."
+    },
+    {
+      "id": "docs_prd_jdih_buat_revisi",
+      "label": "Buat Revisi Tertaut Dokumen Induk",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L456",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 1,
+      "community_name": "Siklus Hidup dan Verifikasi Dokumen"
+    },
+    {
+      "id": "docs_prd_jdih_status_aktif_nonaktif",
+      "label": "Status Dokumen Aktif / Tidak Aktif",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L483",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 1,
+      "community_name": "Siklus Hidup dan Verifikasi Dokumen"
+    },
+    {
+      "id": "docs_prd_jdih_notifikasi_web",
+      "label": "Notifikasi Web (Ikon Lonceng)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L510",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 1,
+      "community_name": "Siklus Hidup dan Verifikasi Dokumen"
+    },
+    {
+      "id": "docs_prd_jdih_daftar_pencarian",
+      "label": "Daftar dan Pencarian Dokumen",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L400",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 1,
+      "community_name": "Siklus Hidup dan Verifikasi Dokumen"
+    },
+    {
+      "id": "docs_prd_jdih_detail_pratinjau",
+      "label": "Detail Dokumen, Pratinjau, dan Riwayat Versi",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L428",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 1,
+      "community_name": "Siklus Hidup dan Verifikasi Dokumen"
+    },
+    {
+      "id": "docs_prd_jdih_nextjs_app_router",
+      "label": "Next.js App Router + Route Handlers",
+      "file_type": "concept",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L572",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_sheets_db",
+      "label": "Google Sheets Database (12 Tab)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L614",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_tab_units",
+      "label": "Tab Sheets Units",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.4 Tab Units",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_tab_categories",
+      "label": "Tab Sheets Categories",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.4 Tab Categories",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_tab_documents",
+      "label": "Tab Sheets Documents",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.4 Tab Documents",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_tab_document_versions",
+      "label": "Tab Sheets Document_Versions",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.4 Tab Document_Versions",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_tab_version_sections",
+      "label": "Tab Sheets Version_Sections",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.4 Tab Version_Sections",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_tab_attachments",
+      "label": "Tab Sheets Attachments",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.4 Tab Attachments",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_tab_review_log",
+      "label": "Tab Sheets Review_Log",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.4 Tab Review_Log",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_tab_document_log",
+      "label": "Tab Sheets Document_Log",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.4 Tab Document_Log",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_tab_notifications",
+      "label": "Tab Sheets Notifications",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.4 Tab Notifications",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_tab_operations",
+      "label": "Tab Sheets Operations (Idempotensi)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.4 Tab Operations",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_shared_drive",
+      "label": "Shared Drive JDIH RS AN-NISA",
+      "file_type": "concept",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.1 Penyimpanan Berkas",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_redis_lock_cache",
+      "label": "Upstash Redis Lock, Cache, dan Rate Limit",
+      "file_type": "rationale",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "Decision Log & 4.1",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur",
+      "rationale": "Serverless Vercel tidak berbagi memori; Redis mencegah nomor ganda, keputusan ganda, dan menjaga kuota 300 baca/menit Google Sheets."
+    },
+    {
+      "id": "docs_prd_jdih_react_pdf",
+      "label": "Generator PDF (@react-pdf/renderer)",
+      "file_type": "concept",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.1 Generate PDF",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_api_contracts",
+      "label": "Kontrak API REST (15 Endpoint)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L802",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_vercel_deploy",
+      "label": "Deployment Vercel HTTPS Internal",
+      "file_type": "concept",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "4.1 Deployment",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 2,
+      "community_name": "Arsitektur Data dan Infrastruktur"
+    },
+    {
+      "id": "docs_prd_jdih_sitemap_17",
+      "label": "Rencana Halaman (17 Route Sitemap)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L779",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 3,
+      "community_name": "Antarmuka dan Pengalaman Pengguna"
+    },
+    {
+      "id": "docs_prd_jdih_tema_biru_ui",
+      "label": "Tema Biru OPPE & Tailwind + shadcn/ui",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L842",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 3,
+      "community_name": "Antarmuka dan Pengalaman Pengguna"
+    },
+    {
+      "id": "docs_prd_jdih_format_pdf_a4",
+      "label": "Format PDF Resmi A4 Portrait",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L866",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 3,
+      "community_name": "Antarmuka dan Pengalaman Pengguna"
+    },
+    {
+      "id": "docs_prd_jdih_ui_states_8",
+      "label": "Delapan State UI Wajib (Section 5.3)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L879",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 3,
+      "community_name": "Antarmuka dan Pengalaman Pengguna"
+    },
+    {
+      "id": "docs_prd_jdih_editor_lampiran_b",
+      "label": "Skema Isian Editor 5 Jenis (Lampiran B)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L290",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 3,
+      "community_name": "Antarmuka dan Pengalaman Pengguna"
+    },
+    {
+      "id": "docs_prd_jdih_mockup_spa",
+      "label": "Mockup UI Interaktif JDIH (mockup/index.html)",
+      "file_type": "code",
+      "source_file": "mockup/index.html",
+      "source_location": "mockup/index.html",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 3,
+      "community_name": "Antarmuka dan Pengalaman Pengguna"
+    },
+    {
+      "id": "docs_prd_jdih_unit_seed_34",
+      "label": "Daftar 34 Unit Awal RS AN-NISA (Lampiran A)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L162",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 4,
+      "community_name": "Tata Kelola, Seed Data, dan UAT"
+    },
+    {
+      "id": "docs_prd_jdih_decision_log",
+      "label": "Decision Log Arsitektur & Produk (16 Keputusan)",
+      "file_type": "rationale",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L23",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 4,
+      "community_name": "Tata Kelola, Seed Data, dan UAT",
+      "rationale": "Mengunci ruang lingkup Fase 1 selaras aplikasi OPPE tanpa server DB terpisah."
+    },
+    {
+      "id": "docs_prd_jdih_open_questions",
+      "label": "Enam Pertanyaan Terbuka (Open Questions)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L893",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 4,
+      "community_name": "Tata Kelola, Seed Data, dan UAT"
+    },
+    {
+      "id": "docs_prd_jdih_uat_15",
+      "label": "Lima Belas Skenario Penerimaan UAT (Lampiran C)",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L958",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 4,
+      "community_name": "Tata Kelola, Seed Data, dan UAT"
+    },
+    {
+      "id": "docs_prd_jdih_sprint_roadmap",
+      "label": "Rencana Implementasi 4 Sprint",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "2. Rencana Sprint",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 4,
+      "community_name": "Tata Kelola, Seed Data, dan UAT"
+    },
+    {
+      "id": "docs_prd_jdih_metrik_sukses",
+      "label": "Tujuan Bisnis & 6 Key Results",
+      "file_type": "document",
+      "source_file": "docs/PRD_JDIH.md",
+      "source_location": "L57",
+      "source_url": null,
+      "captured_at": "2026-11-26",
+      "author": "TIM DTO RS AN-NISA",
+      "contributor": "Antigravity Graphify Builder",
+      "community_id": 4,
+      "community_name": "Tata Kelola, Seed Data, dan UAT"
+    }
+  ],
+  "links": [
+    {
+      "source": "docs_prd_jdih_login_nik",
+      "target": "docs_prd_jdih_tab_users",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_login_nik",
+      "target": "docs_prd_jdih_sesi_30_menit",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_login_nik",
+      "target": "docs_prd_jdih_penguncian_5x",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_rbac_unit_scope",
+      "target": "docs_prd_jdih_role_super_admin",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_rbac_unit_scope",
+      "target": "docs_prd_jdih_role_staf",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_rbac_unit_scope",
+      "target": "docs_prd_jdih_role_koordinator",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_rbac_unit_scope",
+      "target": "docs_prd_jdih_role_manajer",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_rbac_unit_scope",
+      "target": "docs_prd_jdih_tab_user_units",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_tab_user_units",
+      "target": "docs_prd_jdih_tab_users",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_rbac_unit_scope",
+      "target": "docs_prd_jdih_guard_403",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_role_koordinator",
+      "target": "docs_prd_jdih_role_manajer",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_buat_template",
+      "target": "docs_prd_jdih_jenis_dokumen",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_upload_chunked",
+      "target": "docs_prd_jdih_jenis_dokumen",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_pengajuan_unit",
+      "target": "docs_prd_jdih_buat_template",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_pengajuan_unit",
+      "target": "docs_prd_jdih_upload_chunked",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_pengajuan_unit",
+      "target": "docs_prd_jdih_nomor_manual_unik",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_pengajuan_unit",
+      "target": "docs_prd_jdih_verifikasi_manajer",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_verifikasi_manajer",
+      "target": "docs_prd_jdih_keberlakuan_tanggal",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_buat_revisi",
+      "target": "docs_prd_jdih_keberlakuan_tanggal",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_buat_revisi",
+      "target": "docs_prd_jdih_pengajuan_unit",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_status_aktif_nonaktif",
+      "target": "docs_prd_jdih_daftar_pencarian",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_detail_pratinjau",
+      "target": "docs_prd_jdih_keberlakuan_tanggal",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_detail_pratinjau",
+      "target": "docs_prd_jdih_buat_revisi",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_detail_pratinjau",
+      "target": "docs_prd_jdih_status_aktif_nonaktif",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_daftar_pencarian",
+      "target": "docs_prd_jdih_detail_pratinjau",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_pengajuan_unit",
+      "target": "docs_prd_jdih_notifikasi_web",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_verifikasi_manajer",
+      "target": "docs_prd_jdih_notifikasi_web",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_nextjs_app_router",
+      "target": "docs_prd_jdih_api_contracts",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_nextjs_app_router",
+      "target": "docs_prd_jdih_vercel_deploy",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_nextjs_app_router",
+      "target": "docs_prd_jdih_react_pdf",
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_sheets_db",
+      "target": "docs_prd_jdih_tab_units",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_sheets_db",
+      "target": "docs_prd_jdih_tab_categories",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_sheets_db",
+      "target": "docs_prd_jdih_tab_documents",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_sheets_db",
+      "target": "docs_prd_jdih_tab_document_versions",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_sheets_db",
+      "target": "docs_prd_jdih_tab_version_sections",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_sheets_db",
+      "target": "docs_prd_jdih_tab_attachments",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_sheets_db",
+      "target": "docs_prd_jdih_tab_review_log",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_sheets_db",
+      "target": "docs_prd_jdih_tab_document_log",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_sheets_db",
+      "target": "docs_prd_jdih_tab_notifications",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_sheets_db",
+      "target": "docs_prd_jdih_tab_operations",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_tab_documents",
+      "target": "docs_prd_jdih_tab_units",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_tab_documents",
+      "target": "docs_prd_jdih_tab_categories",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_tab_document_versions",
+      "target": "docs_prd_jdih_tab_documents",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_tab_version_sections",
+      "target": "docs_prd_jdih_tab_document_versions",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_tab_attachments",
+      "target": "docs_prd_jdih_tab_document_versions",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_tab_review_log",
+      "target": "docs_prd_jdih_tab_document_versions",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_tab_document_log",
+      "target": "docs_prd_jdih_tab_documents",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_tab_attachments",
+      "target": "docs_prd_jdih_shared_drive",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_tab_document_versions",
+      "target": "docs_prd_jdih_shared_drive",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_tab_units",
+      "target": "docs_prd_jdih_shared_drive",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_api_contracts",
+      "target": "docs_prd_jdih_redis_lock_cache",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_redis_lock_cache",
+      "target": "docs_prd_jdih_tab_operations",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_mockup_spa",
+      "target": "docs_prd_jdih_sitemap_17",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_mockup_spa",
+      "target": "docs_prd_jdih_tema_biru_ui",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_mockup_spa",
+      "target": "docs_prd_jdih_format_pdf_a4",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_mockup_spa",
+      "target": "docs_prd_jdih_ui_states_8",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_mockup_spa",
+      "target": "docs_prd_jdih_editor_lampiran_b",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_tema_biru_ui",
+      "target": "docs_prd_jdih_ui_states_8",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_decision_log",
+      "target": "docs_prd_jdih_sprint_roadmap",
+      "relation": "rationale_for",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_metrik_sukses",
+      "target": "docs_prd_jdih_uat_15",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_unit_seed_34",
+      "target": "docs_prd_jdih_sprint_roadmap",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_open_questions",
+      "target": "docs_prd_jdih_sprint_roadmap",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_role_koordinator",
+      "target": "docs_prd_jdih_pengajuan_unit",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_role_koordinator",
+      "target": "docs_prd_jdih_buat_revisi",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_role_koordinator",
+      "target": "docs_prd_jdih_status_aktif_nonaktif",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_role_manajer",
+      "target": "docs_prd_jdih_verifikasi_manajer",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_role_staf",
+      "target": "docs_prd_jdih_daftar_pencarian",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_role_super_admin",
+      "target": "docs_prd_jdih_tab_units",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_role_super_admin",
+      "target": "docs_prd_jdih_tab_users",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_rbac_unit_scope",
+      "target": "docs_prd_jdih_api_contracts",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_penguncian_5x",
+      "target": "docs_prd_jdih_redis_lock_cache",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_nomor_manual_unik",
+      "target": "docs_prd_jdih_redis_lock_cache",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_nomor_manual_unik",
+      "target": "docs_prd_jdih_tab_document_versions",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_verifikasi_manajer",
+      "target": "docs_prd_jdih_tab_review_log",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_verifikasi_manajer",
+      "target": "docs_prd_jdih_redis_lock_cache",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_status_aktif_nonaktif",
+      "target": "docs_prd_jdih_tab_document_log",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_notifikasi_web",
+      "target": "docs_prd_jdih_tab_notifications",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_buat_template",
+      "target": "docs_prd_jdih_tab_version_sections",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_buat_template",
+      "target": "docs_prd_jdih_react_pdf",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_buat_template",
+      "target": "docs_prd_jdih_editor_lampiran_b",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_upload_chunked",
+      "target": "docs_prd_jdih_shared_drive",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_upload_chunked",
+      "target": "docs_prd_jdih_tab_attachments",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_jenis_dokumen",
+      "target": "docs_prd_jdih_tab_categories",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_unit_seed_34",
+      "target": "docs_prd_jdih_tab_units",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_format_pdf_a4",
+      "target": "docs_prd_jdih_react_pdf",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_open_questions",
+      "target": "docs_prd_jdih_format_pdf_a4",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_uat_15",
+      "target": "docs_prd_jdih_rbac_unit_scope",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_uat_15",
+      "target": "docs_prd_jdih_keberlakuan_tanggal",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_uat_15",
+      "target": "docs_prd_jdih_verifikasi_manajer",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_uat_15",
+      "target": "docs_prd_jdih_nomor_manual_unik",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_mockup_spa",
+      "target": "docs_prd_jdih_daftar_pencarian",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_mockup_spa",
+      "target": "docs_prd_jdih_pengajuan_unit",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_mockup_spa",
+      "target": "docs_prd_jdih_verifikasi_manajer",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_mockup_spa",
+      "target": "docs_prd_jdih_unit_seed_34",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    },
+    {
+      "source": "docs_prd_jdih_mockup_spa",
+      "target": "docs_prd_jdih_rbac_unit_scope",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md",
+      "weight": 1
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "alur_verifikasi_dan_publikasi",
+      "label": "Alur Pengajuan, Kunci Redis, Verifikasi Manajer, dan Notifikasi Web",
+      "nodes": [
+        "docs_prd_jdih_role_koordinator",
+        "docs_prd_jdih_pengajuan_unit",
+        "docs_prd_jdih_redis_lock_cache",
+        "docs_prd_jdih_role_manajer",
+        "docs_prd_jdih_verifikasi_manajer",
+        "docs_prd_jdih_tab_review_log",
+        "docs_prd_jdih_notifikasi_web"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md"
+    },
+    {
+      "id": "arsitektur_penyimpanan_jdih",
+      "label": "Arsitektur Serverless Next.js + Google Sheets + Shared Drive + Upstash Redis",
+      "nodes": [
+        "docs_prd_jdih_nextjs_app_router",
+        "docs_prd_jdih_sheets_db",
+        "docs_prd_jdih_shared_drive",
+        "docs_prd_jdih_redis_lock_cache",
+        "docs_prd_jdih_vercel_deploy"
+      ],
+      "relation": "implement",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md"
+    },
+    {
+      "id": "kendali_keberlakuan_dan_revisi",
+      "label": "Kendali Keberlakuan Tanggal WIB dan Riwayat Versi Dokumen",
+      "nodes": [
+        "docs_prd_jdih_tab_documents",
+        "docs_prd_jdih_tab_document_versions",
+        "docs_prd_jdih_keberlakuan_tanggal",
+        "docs_prd_jdih_buat_revisi",
+        "docs_prd_jdih_status_aktif_nonaktif"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1,
+      "source_file": "docs/PRD_JDIH.md"
+    }
+  ]
+}

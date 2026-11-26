@@ -1,0 +1,22 @@
+{
+  "name": "jdih-rs-an-nisa",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --webpack --hostname 127.0.0.1",
+    "build": "next build --webpack",
+    "start": "next start --hostname 127.0.0.1",
+    "check:google": "node scripts/check-google.mjs",
+    "verify:mockup": "node scripts/verify-mockup.mjs",
+    "verify:app": "node scripts/verify-app.mjs"
+  },
+  "dependencies": {
+    "@react-pdf/renderer": "^4.3.1",
+    "bcryptjs": "^3.0.2",
+    "next": "16.4.6",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
+}
+
