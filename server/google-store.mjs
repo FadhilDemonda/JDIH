@@ -447,6 +447,15 @@ export async function cloudFileStream(file) {
     { stream: true })).body;
 }
 
+export async function trashCloudFile(driveId) {
+  if (!cloudEnabled || !driveId) return;
+  await google(drive + '/' + encodeURIComponent(driveId) + '?supportsAllDrives=true', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trashed: true }),
+  }, [404]);
+}
+
 export async function backupSpreadsheet(date) {
   const parent = await folder(getRootFolder(), 'backup', 'Backup JDIH');
   const marker = 'backup-' + date;

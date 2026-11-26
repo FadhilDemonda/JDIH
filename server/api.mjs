@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { checkFile, fileStream, loadSeed, loadState, saveChunk, saveState, serialize } from './store.mjs';
-import { backupSpreadsheet, beginCloudUpload, cloudEnabled, ensureUnitFolder, removeEmptyUnitFolder, renameUnitFolder } from './google-store.mjs';
+import { backupSpreadsheet, beginCloudUpload, cloudEnabled, ensureUnitFolder, removeEmptyUnitFolder, renameUnitFolder, trashCloudFile } from './google-store.mjs';
 import { renderDocumentPdf } from './pdf.mjs';
 
 const MINUTE = 60_000;
@@ -592,6 +592,21 @@ async function versionFiles(data, user, version, doc, method, id, input, request
       if (isApprovedTemplate) documentLog(data, doc, user, 'UNGGAH_SCAN', file.nama);
     }
     return { offset: file.offset, ready: file.ready };
+  }
+  if (method === 'DELETE' && id) {
+    const attachment = (id === 'scan' || id === 'pdf')
+      ? version.attachments.find((file) => file.kind === 'PDF')
+      : version.attachments.find((file) => file.id === id);
+    requireThat(attachment, 404, 'Berkas tidak ditemukan.');
+    conflict(isEditableDraft || (isApprovedTemplate && attachment.kind === 'PDF'), 'Versi terkunci.');
+    const uploadEntry = data.uploads.find((entry) => entry.id === attachment.id && entry.versionId === version.id);
+    if (cloudEnabled && uploadEntry?.drive_id) {
+      await trashCloudFile(uploadEntry.drive_id);
+    }
+    version.attachments = version.attachments.filter((file) => file.id !== attachment.id);
+    data.uploads = data.uploads.filter((entry) => entry.id !== attachment.id);
+    if (isApprovedTemplate) documentLog(data, doc, user, 'HAPUS_SCAN', attachment.nama);
+    return { version: safeVersion(version) };
   }
   throw new ApiError(404, 'Rute tidak ditemukan.');
 }

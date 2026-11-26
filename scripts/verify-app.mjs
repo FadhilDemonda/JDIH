@@ -157,7 +157,14 @@ async function run() {
 
   await send(fileRoute, { method: 'POST', cookie: coord,
     body: { name: 'ganti-upload.pdf', size: pdf.length, kind: 'PDF' }, status: 409 });
-  console.log('Lulus PDF non-SPO, unggah & pratinjau PDF hasil scan pada template draf/terbit, dan proteksi versi upload terbit.');
+
+  await send(tplDraftScanRoute + '/scan', { method: 'DELETE', cookie: coord });
+  await send(tplDraftScanRoute + '/scan', { cookie: coord, status: 404 });
+  await send(approvedScanRoute + '/scan', { method: 'DELETE', cookie: staff, status: 403 });
+  await send(approvedScanRoute + '/scan', { method: 'DELETE', cookie: coord });
+  await send(approvedScanRoute + '/scan', { cookie: staff, status: 404 });
+  await send(fileRoute + '/scan', { method: 'DELETE', cookie: coord, status: 409 });
+  console.log('Lulus PDF non-SPO, unggah/hapus & pratinjau PDF hasil scan pada template draf/terbit, dan proteksi versi upload terbit.');
 
   if (root) {
     const requests = await Promise.all(['u-21', 'u-32'].map(async (unit_id) => {

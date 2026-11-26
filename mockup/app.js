@@ -169,6 +169,12 @@
     });
   }
 
+  function clearLocalScanPreview(versionId) {
+    const prev = localScanUrls.get(versionId);
+    if (prev?.url) URL.revokeObjectURL(prev.url);
+    localScanUrls.delete(versionId);
+  }
+
   function getScanPdfUrl(version) {
     const att = getScanPdfAttachment(version);
     if (live && att?.id) return fileUrl(version, 'scan') + '?v=' + encodeURIComponent(att.id);
@@ -303,6 +309,67 @@
       saving = false;
       refresh();
     }
+  }
+
+  async function deleteScanPdf(version, options = {}) {
+    if (saving || !version) return;
+    const att = getScanPdfAttachment(version);
+    const localInfo = localScanUrls.get(version.id);
+    if (!att && !localInfo) return;
+    const fileName = att?.nama || localInfo?.name || 'berkas PDF';
+    const res = await openDialog({
+      title: 'Hapus Berkas PDF',
+      bodyHtml: `<p>Berkas <strong>${esc(fileName)}</strong> akan dihapus dari versi dokumen ini. Lanjutkan?</p>`,
+      confirmLabel: 'Ya, Hapus PDF',
+      confirmTone: 'danger',
+    });
+    if (!res) return;
+    if (!live) {
+      version.attachments = (version.attachments || []).filter((item) =>
+        item.kind !== 'PDF' && !(version.metode === 'UPLOAD' && /\.pdf$/i.test(item.nama || '')));
+      clearLocalScanPreview(version.id);
+      state.previewModeByVersion[version.id] = 'CURRENT';
+      showToast('Berkas PDF dihapus.', 'success');
+      options.onRefresh?.();
+      return;
+    }
+    if (!att?.id) {
+      clearLocalScanPreview(version.id);
+      state.previewModeByVersion[version.id] = 'CURRENT';
+      showToast('Pratinjau PDF lokal dihapus.', 'success');
+      options.onRefresh?.();
+      return;
+    }
+    if (options.preserveDraft) {
+      saving = true;
+      try {
+        const draft = draftInput(version);
+        const result = await api(versionPath(version.id, '/files/scan'), 'DELETE', undefined, { snapshot: false });
+        const fresh = result.version || await api(versionPath(version.id));
+        Object.assign(fresh, draft);
+        const index = state.versions.findIndex((item) => item.id === version.id);
+        if (index !== -1) state.versions[index] = fresh;
+        clearLocalScanPreview(version.id);
+        state.previewModeByVersion[version.id] = 'CURRENT';
+        showToast('Berkas PDF dihapus.', 'success');
+        options.onRefresh?.();
+      } catch (error) {
+        if (error.status === 401) {
+          state.loggedIn = false;
+          state.currentUserId = null;
+          navigate('#/login');
+        }
+        showToast(error.message, 'error');
+      } finally {
+        saving = false;
+      }
+      return;
+    }
+    return writeAction(versionPath(version.id, '/files/scan'), 'DELETE', undefined, 'Berkas PDF dihapus.', () => {
+      clearLocalScanPreview(version.id);
+      state.previewModeByVersion[version.id] = 'CURRENT';
+      options.onRefresh?.();
+    });
   }
 
   const MONTH_ID = [
@@ -1918,14 +1985,18 @@
                     <div class="progress-track"><div class="progress-fill" style="width:${state.uploadSim.progress}%"></div></div>
                   </div>
                 ` : ''}
-                ${(activeVersion.attachments || []).map((att) => `
-                  <div class="upload-file-row">
-                    <span>${attachmentLink(activeVersion, att)} <span class="tabular" style="color:var(--text-secondary);">(${esc(att.ukuran)})</span></span>
-                    ${(att.kind === 'PDF' || (!live && activeVersion.metode === 'UPLOAD' && /\.pdf$/i.test(att.nama || '')))
-                      ? `<button type="button" class="btn btn-secondary btn-compact" data-open-scan-preview>Pratinjau</button>`
-                      : ''}
-                  </div>
-                `).join('')}
+                ${(activeVersion.attachments || []).map((att) => {
+                  const isScanPdf = att.kind === 'PDF' || (!live && activeVersion.metode === 'UPLOAD' && /\.pdf$/i.test(att.nama || ''));
+                  return `
+                    <div class="upload-file-row">
+                      <span>${attachmentLink(activeVersion, att)} <span class="tabular" style="color:var(--text-secondary);">(${esc(att.ukuran)})</span></span>
+                      ${isScanPdf ? `<div class="upload-file-actions">
+                        <button type="button" class="btn btn-secondary btn-compact" data-open-scan-preview>Pratinjau</button>
+                        ${canUploadScanOnDetail ? `<button type="button" class="btn btn-danger btn-compact" data-delete-scan-pdf>${iconSvg('trash')}<span>Hapus</span></button>` : ''}
+                      </div>` : ''}
+                    </div>
+                  `;
+                }).join('')}
               </div>
             ` : ''}
           </section>
@@ -1982,6 +2053,12 @@
         viewDetailDokumen(docId);
         document.getElementById('detail-preview-stage')?.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'instant' : 'smooth' });
       };
+    });
+    main.querySelectorAll('[data-delete-scan-pdf]').forEach((btn) => {
+      btn.onclick = () => deleteScanPdf(activeVersion, {
+        preserveDraft: false,
+        onRefresh: () => viewDetailDokumen(docId),
+      });
     });
 
     const detailScanInput = document.getElementById('detail-scan-upload-input');
@@ -2646,6 +2723,12 @@
         document.getElementById('edit-preview-stage')?.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'instant' : 'smooth' });
       };
     });
+    main.querySelectorAll('[data-delete-scan-pdf]').forEach((btn) => {
+      btn.onclick = () => deleteScanPdf(ver, {
+        preserveDraft: true,
+        onRefresh: () => viewEditDraf(versionId),
+      });
+    });
     if (annotations.length) bindAnnotationJumps(document.getElementById('edit-preview-stage'));
 
     if (!isLocked) {
@@ -2934,6 +3017,7 @@
             <div class="upload-file-actions">
               <button type="button" class="btn btn-secondary btn-compact" data-open-scan-preview>Pratinjau PDF</button>
               ${scanUrl ? `<a href="${esc(scanUrl)}" target="_blank" rel="noopener" class="btn btn-ghost btn-compact">Buka Tab Baru</a>` : ''}
+              ${!isLocked ? `<button type="button" class="btn btn-danger btn-compact" data-delete-scan-pdf>${iconSvg('trash')}<span>Hapus</span></button>` : ''}
             </div>
           </div>
         ` : ''}
@@ -2965,6 +3049,7 @@
             <div class="upload-file-actions">
               <button type="button" class="btn btn-secondary btn-compact" data-open-scan-preview>Pratinjau PDF</button>
               ${scanUrl ? `<a href="${esc(scanUrl)}" target="_blank" rel="noopener" class="btn btn-ghost btn-compact">Buka Tab Baru</a>` : ''}
+              ${!isLocked ? `<button type="button" class="btn btn-danger btn-compact" data-delete-scan-pdf>${iconSvg('trash')}<span>Hapus</span></button>` : ''}
             </div>
           </div>
         `).join('')}
