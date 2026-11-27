@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title-opt4">
+  <title id="title-opt4">Logo JDIH RS AN-NISA - Konsep 4 Tumpukan Lembar Versi</title>
+  <!-- Rounded square badge container -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="2"/>
+  <!-- Back archived layer (Rev 00) -->
+  <rect x="22" y="10" width="28" height="34" rx="5" fill="#A7F3D0"/>
+  <!-- Middle archived layer (Rev 01) -->
+  <rect x="18" y="15" width="28" height="34" rx="5" fill="#2D8A56"/>
+  <!-- Front active version sheet (Berlaku) -->
+  <path d="M14 25C14 22.2386 16.2386 20 19 20H35L42 27V49C42 51.7614 39.7614 54 37 54H19C16.2386 54 14 51.7614 14 49V25Z" fill="#1F6E43"/>
+  <!-- Active folded corner accent -->
+  <path d="M35 20L42 27H37C35.8954 27 35 26.1046 35 25V20Z" fill="#FF6A2B"/>
+  <!-- Document lines on active sheet -->
+  <rect x="20" y="31" width="16" height="3.2" rx="1.6" fill="#FFFFFF"/>
+  <rect x="20" y="37.5" width="16" height="3.2" rx="1.6" fill="#E3F3EA" fill-opacity="0.82"/>
+  <rect x="20" y="44" width="10.5" height="3.2" rx="1.6" fill="#E3F3EA" fill-opacity="0.82"/>
+</svg>

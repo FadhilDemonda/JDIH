@@ -46,9 +46,11 @@ const draftMetadata = {
 
 async function run() {
   await send('state', { status: 401 });
+  await send('auth/ping', { status: 401 });
   await send('auth/login', { method: 'POST', headers: { Origin: 'https://example.invalid' }, status: 403 });
   const [{ cookie: staff }, { cookie: coord }, { cookie: manager }, { cookie: admin }] =
     await Promise.all(['1989.04.12', '1985.11.03', '1978.02.19', '1221.21.23'].map(actor));
+  assert.equal((await send('auth/ping', { cookie: staff })).body.ok, true);
   const create = { method: 'POST', cookie: coord, key: writeKey,
     body: { unit_id: 'u-21', category_id: 'cat-spo', metode: 'TEMPLATE' } };
   const { body: { documentId, versionId } } = await send('documents', create);

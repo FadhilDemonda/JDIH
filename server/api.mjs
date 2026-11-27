@@ -893,6 +893,7 @@ async function login(request, data, input) {
 }
 
 async function dispatch(data, user, method, route, parts, input, request, url) {
+  if (route === 'auth' && parts[0] === 'ping' && method === 'GET') return { ok: true };
   if (route === 'state' && method === 'GET') return snapshot(data, user);
   if (route === 'documents') return documents(data, user, method, parts, input, url);
   if (route === 'versions') return versions(data, user, method, parts, input, request, url);
@@ -962,7 +963,7 @@ export async function handleApi(request, [route, ...parts]) {
         await saveState(data);
         return json({ state: snapshot(data, user) }, 200, { 'Set-Cookie': cookie(request, token) });
       }
-      allowed(route === 'state' || !user.must_change_password);
+      allowed(route === 'state' || (route === 'auth' && parts[0] === 'ping') || !user.must_change_password);
 
       const idempotency = request.headers.get('idempotency-key');
       if (idempotency) invalid(/^[\w-]{1,128}$/.test(idempotency), 'Idempotency-Key tidak valid.');

@@ -7,6 +7,7 @@
   let stateRevision = 0;
   let reviewSelectionEvents = null;
   let reviewDraft = null;
+  let livePreviewTimer = null;
   const localScanUrls = new Map();
 
   const state = {
@@ -25,8 +26,8 @@
     notifications: structuredClone(SEED.NOTIFICATIONS || []),
 
     // UI view state
-    docFilters: { q: '', unitId: '', categoryId: '', sortBy: 'TERBARU', showInactive: false, pageSize: 10, page: 1, loading: false },
-    myUnitDocFilters: { q: '', unitId: '', categoryId: '', sortBy: 'TERBARU', showInactive: false, pageSize: 10, page: 1, loading: false },
+    docFilters: { q: '', unitId: '', categoryId: '', sortBy: 'TERBARU', showInactive: false, moreOpen: false, pageSize: 10, page: 1, loading: false },
+    myUnitDocFilters: { q: '', unitId: '', categoryId: '', sortBy: 'TERBARU', showInactive: false, moreOpen: false, pageSize: 10, page: 1, loading: false },
     lastListRoute: '/dokumen',
     pengajuanFilter: 'SEMUA',
     pengajuanSort: 'TERBARU',
@@ -201,7 +202,7 @@
 
   function renderDocumentPreview(version, doc, annotations = [], options = {}) {
     const mode = getActivePreviewMode(version);
-    if (mode === 'CURRENT') return renderA4Sheet(version, doc, annotations);
+    if (mode === 'CURRENT') return `<div class="a4-sheet-scroll">${renderA4Sheet(version, doc, annotations)}</div>`;
     const scanUrl = getScanPdfUrl(version);
     const att = getScanPdfAttachment(version);
     if (scanUrl) {
@@ -530,7 +531,7 @@
 
     for (const v of approved) {
       if (v.id === currentBerlakuId) {
-        map.set(v.id, { code: 'BERLAKU', label: 'Berlaku', tone: 'success' });
+        map.set(v.id, { code: 'BERLAKU', label: 'Berlaku saat ini', tone: 'success' });
       } else if (v.tgl_berlaku && v.tgl_berlaku > state.today) {
         map.set(v.id, { code: 'BERLAKU_MULAI', label: `Berlaku mulai ${formatDateID(v.tgl_berlaku)}`, tone: 'warning' });
       } else {
@@ -589,12 +590,77 @@
     }
   }
 
+  function formatReviewActionLabel(aksi) {
+    switch (aksi) {
+      case 'AJUKAN': return 'Diajukan';
+      case 'SETUJUI': return 'Disetujui';
+      case 'KEMBALIKAN': return 'Dikembalikan';
+      case 'TARIK': return 'Ditarik';
+      default: return aksi || '-';
+    }
+  }
+
+  function formatNotifTypeLabel(jenis) {
+    switch (jenis) {
+      case 'PENGAJUAN': return 'Pengajuan Baru';
+      case 'DISETUJUI': return 'Dokumen Disetujui';
+      case 'DIKEMBALIKAN': return 'Perlu Perbaikan';
+      default: return jenis || 'Notifikasi';
+    }
+  }
+
+  function getUserInitials(nama) {
+    const withoutSuffix = String(nama || '').split(',')[0].trim();
+    const clean = withoutSuffix
+      .replace(/^(?:(?:prof|drg|dr|apt|ns|ir|h|hj)\.?\s+)+/i, '')
+      .trim();
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    const letters = clean.replace(/[^a-zA-Z]/g, '');
+    return (letters.slice(0, 2) || 'RS').toUpperCase();
+  }
+
+  function setFieldValidation(inputEl, errEl, message = '') {
+    if (errEl) {
+      errEl.textContent = message;
+      errEl.hidden = !message;
+    }
+    if (!inputEl) return;
+    if (message) {
+      inputEl.classList.add('is-invalid');
+      inputEl.setAttribute('aria-invalid', 'true');
+      if (errEl?.id) inputEl.setAttribute('aria-describedby', errEl.id);
+    } else {
+      inputEl.classList.remove('is-invalid');
+      inputEl.removeAttribute('aria-invalid');
+      if (errEl?.id && inputEl.getAttribute('aria-describedby') === errEl.id) {
+        inputEl.removeAttribute('aria-describedby');
+      }
+    }
+  }
+
+  function renderPageCounts(label, counts, { cards = false } = {}) {
+    return `
+      <dl class="page-counts ${cards ? 'page-counts-cards' : 'page-counts-inline'}" aria-label="${esc(label)}">
+        ${counts.map(({ label, count, tone = 'neutral', icon }) => `
+          <div data-tone="${esc(tone)}">
+            <dt>${esc(label)}${icon ? `<span class="page-count-icon" aria-hidden="true">${iconSvg(icon)}</span>` : ''}</dt>
+            <dd class="tabular">${count}</dd>
+          </div>
+        `).join('')}
+      </dl>
+    `;
+  }
+
   function iconSvg(name) {
     const paths = {
       doc: '<path d="M6 2.5h6l4 4V17a1.5 1.5 0 01-1.5 1.5h-8.5A1.5 1.5 0 014.5 17V4A1.5 1.5 0 016 2.5z"/><path d="M12 2.5v4h4M7.5 10.5h5M7.5 13.5h3.5"/>',
       folder: '<path d="M3 5.5A1.5 1.5 0 014.5 4h3.4l1.6 1.8h6A1.5 1.5 0 0117 7.3v7.2a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 14.5v-9z"/>',
       edit: '<path d="M13.5 3.5l3 3L7 16H4v-3l9.5-9.5z"/>',
       check: '<path d="M16.5 5.5l-8 8-4-4"/>',
+      clock: '<circle cx="10" cy="10" r="7"/><path d="M10 6.5V10l2.5 1.5"/>',
       bell: '<path d="M15 7a5 5 0 10-10 0c0 4.5-2 6-2 6h14s-2-1.5-2-6z"/><path d="M8.5 16a1.7 1.7 0 003 0"/>',
       building: '<path d="M4 17.5h12M5.5 17.5V4a1 1 0 011-1h7a1 1 0 011 1v13.5M8.5 6.5h1M11.5 6.5h1M8.5 9.5h1M11.5 9.5h1M9.5 17.5v-4h1v4"/>',
       users: '<circle cx="8" cy="7" r="2.5"/><path d="M3.5 16.5a4.5 4.5 0 019 0"/><circle cx="14.5" cy="7.5" r="2"/><path d="M14 12.5a3.5 3.5 0 013.5 4"/>',
@@ -607,6 +673,7 @@
       upload: '<path d="M10 13V4.5M6.5 8L10 4.5 13.5 8M4 15.5h12"/>',
       up: '<path d="M10 14V6M6.5 9.5L10 6l3.5 3.5"/>',
       down: '<path d="M10 6v8M6.5 10.5L10 14l3.5-3.5"/>',
+      chevronDown: '<path d="M5.5 7.5L10 12l4.5-4.5"/>',
       trash: '<path d="M4.5 6h11M8 6V4h4v2M6 6v10.5a1 1 0 001 1h6a1 1 0 001-1V6"/>',
       dots: '<circle cx="10" cy="4.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="10" cy="10" r="1.3" fill="currentColor" stroke="none"/><circle cx="10" cy="15.5" r="1.3" fill="currentColor" stroke="none"/>',
       search: '<circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4 4"/>',
@@ -623,7 +690,7 @@
     const el = document.createElement('div');
     el.className = `toast ${type}`;
     el.setAttribute('role', 'status');
-    el.innerHTML = `<span>${esc(message)}</span><button type="button" class="icon-btn" style="min-width:28px;min-height:28px;padding:2px;" aria-label="Tutup notifikasi">×</button>`;
+    el.innerHTML = `<span>${esc(message)}</span><button type="button" class="icon-btn toast-close-btn" aria-label="Tutup notifikasi">×</button>`;
     const duration = type === 'error' ? 8000 : 4500;
     const timer = setTimeout(() => el.remove(), duration);
     el.querySelector('button').addEventListener('click', () => {
@@ -647,7 +714,7 @@
       <div class="field" style="margin-top:14px;">
         <label for="dialog-note-input">${esc(noteLabel)} ${noteOptional ? '(opsional)' : '<span class="req-mark">*</span>'}</label>
         <textarea id="dialog-note-input" class="textarea" maxlength="${noteMaxLength}" placeholder="${esc(notePlaceholder)}"${noteValue ? ' autofocus' : ''}>${esc(noteValue)}</textarea>
-        <p id="dialog-note-error" class="field-error" hidden></p>
+        <p id="dialog-note-error" class="field-error" role="alert" hidden></p>
       </div>
     ` : '');
 
@@ -676,12 +743,11 @@
           const err = document.getElementById('dialog-note-error');
           const val = input.value.trim();
           if (!val && !noteOptional) {
-            input.classList.add('is-invalid');
-            err.textContent = noteLabel.toLowerCase().includes('alasan') ? 'Alasan wajib diisi' : 'Catatan wajib diisi';
-            err.hidden = false;
+            setFieldValidation(input, err, noteLabel.toLowerCase().includes('alasan') ? 'Alasan wajib diisi' : 'Catatan wajib diisi');
             input.focus();
             return;
           }
+          setFieldValidation(input, err, '');
           cleanup({ confirmed: true, note: val });
           return;
         }
@@ -1014,7 +1080,10 @@
     pop.style.top = `${Math.round(top)}px`;
     pop.style.left = `${Math.round(left)}px`;
 
-    requestAnimationFrame(() => pop.classList.add('open'));
+    requestAnimationFrame(() => {
+      pop.classList.add('open');
+      pop.querySelector('.row-menu-item')?.focus();
+    });
 
     pop.onkeydown = (e) => {
       const menuItems = Array.from(pop.querySelectorAll('.row-menu-item'));
@@ -1023,6 +1092,8 @@
         const t = activeRowMenuTrigger;
         closeRowMenu();
         if (t) t.focus();
+      } else if (e.key === 'Tab') {
+        closeRowMenu();
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         const idx = menuItems.indexOf(document.activeElement);
@@ -1032,16 +1103,21 @@
     };
   }
 
-  function closeMobileSidebar() {
-    document.getElementById('sidebar').classList.remove('open');
+  function closeMobileSidebar(restoreFocus = false) {
+    const sidebar = document.getElementById('sidebar');
+    const wasOpen = sidebar.classList.contains('open');
+    sidebar.classList.remove('open');
     document.getElementById('sidebar-backdrop').hidden = true;
-    document.getElementById('menu-toggle-btn').setAttribute('aria-expanded', 'false');
+    const toggleBtn = document.getElementById('menu-toggle-btn');
+    toggleBtn.setAttribute('aria-expanded', 'false');
+    if (restoreFocus && wasOpen) toggleBtn.focus();
   }
 
   function openMobileSidebar() {
     document.getElementById('sidebar').classList.add('open');
     document.getElementById('sidebar-backdrop').hidden = false;
     document.getElementById('menu-toggle-btn').setAttribute('aria-expanded', 'true');
+    document.getElementById('sidebar-close-btn').focus();
   }
 
   // ---------- Navigation & Shell Chrome ----------
@@ -1127,7 +1203,7 @@
       groups.push({
         title: 'Administrasi Sistem',
         items: [
-          { href: '#/admin/unit', label: 'Unit Kerja (34)', icon: 'building', active: route.path === '/admin/unit' },
+          { href: '#/admin/unit', label: 'Unit Kerja', icon: 'building', count: state.units.length, active: route.path === '/admin/unit' },
           { href: '#/admin/pengguna', label: 'Pengguna', icon: 'users', active: route.path === '/admin/pengguna' },
           { href: '#/admin/koordinator', label: 'Penugasan Koordinator', icon: 'shield', active: route.path === '/admin/koordinator' },
           { href: '#/admin/manajer', label: 'Penugasan Manajer', icon: 'shield', active: route.path === '/admin/manajer' },
@@ -1162,8 +1238,7 @@
     updateNavPill(nav);
 
     // Topbar info
-    const initials = user.nama.replace(/[^A-Z]/g, '').slice(0, 2) || 'RS';
-    document.getElementById('user-avatar').textContent = initials;
+    document.getElementById('user-avatar').textContent = getUserInitials(user.nama);
     document.getElementById('user-name-label').textContent = user.nama;
     const roles = getRolesSummary(user);
     const nonStaf = roles.filter((r) => r !== 'Staf');
@@ -1302,7 +1377,7 @@
           return `
             <tr data-section-label="${esc(spoLabel)}">
               <td class="a4-spo-sec-label">${esc(spoLabel)}</td>
-              <td class="a4-spo-sec-body">
+              <td colspan="3" class="a4-spo-sec-body">
                 <ol class="a4-spo-list">${items.map((item, i) => `<li>${Array.isArray(val) ? marked(item, s.code, i) : esc(item)}</li>`).join('')}</ol>
               </td>
             </tr>
@@ -1311,7 +1386,7 @@
         return `
           <tr data-section-label="${esc(spoLabel)}">
             <td class="a4-spo-sec-label">${esc(spoLabel)}</td>
-            <td class="a4-spo-sec-body"><p>${val ? marked(val, s.code) : 'Belum diisi.'}</p></td>
+            <td colspan="3" class="a4-spo-sec-body"><p>${val ? marked(val, s.code) : 'Belum diisi.'}</p></td>
           </tr>
         `;
       })
@@ -1635,80 +1710,98 @@
     const publishedDocs = state.documents
       .map((doc) => {
         if (myUnitsOnly && !myUnitIds.includes(doc.unit_id)) return null;
+        if (!f.showInactive && doc.status_aktif !== 'AKTIF') return null;
+        if (f.unitId && doc.unit_id !== f.unitId) return null;
         const pub = getPrimaryPublishedVersion(doc.id);
         if (!pub) return null;
         return { doc, version: pub.version, eff: pub.eff };
       })
       .filter(Boolean);
 
-    const filtered = publishedDocs
-      .filter(({ doc, version }) => {
-        if (!f.showInactive && doc.status_aktif !== 'AKTIF') return false;
-        if (f.unitId && doc.unit_id !== f.unitId) return false;
-        if (f.categoryId && doc.category_id !== f.categoryId) return false;
-        if (f.q.trim()) {
-          const q = f.q.trim().toLowerCase();
-          const hay = `${version.judul} ${version.nomor} ${version.kata_kunci || ''}`.toLowerCase();
-          if (!hay.includes(q)) return false;
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        const cmpJudul = () => (a.version.judul || '').localeCompare(b.version.judul || '', 'id', { sensitivity: 'base' });
-        switch (f.sortBy) {
-          case 'TERLAMA': {
-            const d = (a.version.tgl_berlaku || '').localeCompare(b.version.tgl_berlaku || '');
-            return d !== 0 ? d : cmpJudul();
-          }
-          case 'JUDUL_ASC':
-            return cmpJudul();
-          case 'NOMOR_ASC': {
-            const n = (a.version.nomor || '').localeCompare(b.version.nomor || '', 'id', { numeric: true, sensitivity: 'base' });
-            return n !== 0 ? n : cmpJudul();
-          }
-          case 'UNIT_ASC': {
-            const ua = getUnit(a.doc.unit_id)?.nama || '';
-            const ub = getUnit(b.doc.unit_id)?.nama || '';
-            const u = ua.localeCompare(ub, 'id', { sensitivity: 'base' });
-            return u !== 0 ? u : cmpJudul();
-          }
-          case 'TERBARU':
-          default: {
-            const d = (b.version.tgl_berlaku || '').localeCompare(a.version.tgl_berlaku || '');
-            return d !== 0 ? d : cmpJudul();
-          }
-        }
-      });
-
-    const totalPages = Math.max(1, Math.ceil(filtered.length / f.pageSize));
-    if (f.page > totalPages) f.page = totalPages;
-    const start = (f.page - 1) * f.pageSize;
-    const rows = filtered.slice(start, start + f.pageSize);
-
     const pageTitle = myUnitsOnly ? 'Dokumen Unit Saya' : 'Daftar Dokumen Regulasi';
     const pageSubtitle = myUnitsOnly
       ? (myUnits.length ? myUnits.map((u) => u.nama).join(' · ') : 'Belum ada unit kerja yang terhubung ke akun Anda.')
       : 'Regulasi terbit dari seluruh unit RS AN-NISA.';
-    const hasActiveFilters = Boolean(f.q.trim() || f.unitId || f.categoryId || f.showInactive);
+    const categoryCounts = state.categories.map(({ id, label }) => ({
+      label,
+      count: publishedDocs.filter(({ doc }) => doc.category_id === id).length,
+    }));
+
+    function getFilterFlags() {
+      const hasActiveFilters = Boolean(f.q.trim() || f.unitId || f.categoryId || f.showInactive);
+      const advancedCount = Number(f.showInactive) + Number(f.sortBy !== 'TERBARU');
+      return { hasActiveFilters, advancedCount, canReset: hasActiveFilters || advancedCount > 0 };
+    }
+
+    function computeDocs() {
+      const activePublished = state.documents
+        .map((doc) => {
+          if (myUnitsOnly && !myUnitIds.includes(doc.unit_id)) return null;
+          if (!f.showInactive && doc.status_aktif !== 'AKTIF') return null;
+          if (f.unitId && doc.unit_id !== f.unitId) return null;
+          const pub = getPrimaryPublishedVersion(doc.id);
+          if (!pub) return null;
+          return { doc, version: pub.version, eff: pub.eff };
+        })
+        .filter(Boolean);
+
+      return activePublished
+        .filter(({ doc, version }) => {
+          if (f.categoryId && doc.category_id !== f.categoryId) return false;
+          if (f.q.trim()) {
+            const q = f.q.trim().toLowerCase();
+            const hay = `${version.judul} ${version.nomor} ${version.kata_kunci || ''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          const cmpJudul = () => (a.version.judul || '').localeCompare(b.version.judul || '', 'id', { sensitivity: 'base' });
+          switch (f.sortBy) {
+            case 'TERLAMA': {
+              const d = (a.version.tgl_berlaku || '').localeCompare(b.version.tgl_berlaku || '');
+              return d !== 0 ? d : cmpJudul();
+            }
+            case 'JUDUL_ASC':
+              return cmpJudul();
+            case 'NOMOR_ASC': {
+              const n = (a.version.nomor || '').localeCompare(b.version.nomor || '', 'id', { numeric: true, sensitivity: 'base' });
+              return n !== 0 ? n : cmpJudul();
+            }
+            case 'UNIT_ASC': {
+              const ua = getUnit(a.doc.unit_id)?.nama || '';
+              const ub = getUnit(b.doc.unit_id)?.nama || '';
+              const u = ua.localeCompare(ub, 'id', { sensitivity: 'base' });
+              return u !== 0 ? u : cmpJudul();
+            }
+            case 'TERBARU':
+            default: {
+              const d = (b.version.tgl_berlaku || '').localeCompare(a.version.tgl_berlaku || '');
+              return d !== 0 ? d : cmpJudul();
+            }
+          }
+        });
+    }
+
+    const initFlags = getFilterFlags();
 
     main.innerHTML = `
-      <div class="page-header">
+      <div class="page-header page-header-with-counts">
         <div>
           <h1 class="page-title">${esc(pageTitle)}</h1>
           <p class="page-subtitle">${esc(pageSubtitle)}</p>
         </div>
-        <div class="page-actions">
-          ${myUnitsOnly ? `<a href="#/dokumen" class="btn btn-secondary">Lihat semua unit</a>` : ''}
+        <div class="page-actions page-count-actions">
+          ${renderPageCounts('Jumlah dokumen per jenis', categoryCounts)}
           ${isAnyKoordinator(user) ? `<a href="#/pengajuan/baru" class="btn btn-primary">${iconSvg('plus')}<span>Buat Dokumen</span></a>` : ''}
         </div>
       </div>
 
-      <section class="surface-panel" aria-labelledby="document-filters-title">
-        <h2 class="section-heading" id="document-filters-title">Pencarian dan filter</h2>
+      <section class="surface-panel" aria-label="Pencarian dan filter">
         <div class="filter-bar${showUnitFilter ? '' : ' filter-bar-3'}">
-          <div class="field">
-            <label for="doc-search-input">Cari judul, nomor, atau kata kunci</label>
-            <input id="doc-search-input" class="input" type="search" value="${esc(f.q)}" placeholder="Contoh: triase, RSAN/SPO/5/DTO/007, high alert">
+          <div class="field document-filter-search">
+            <label for="doc-search-input">Cari dokumen</label>
+            <input id="doc-search-input" class="input" type="search" value="${esc(f.q)}" placeholder="Judul, nomor, atau kata kunci">
           </div>
           ${showUnitFilter ? `
             <div class="field">
@@ -1726,6 +1819,15 @@
               ${state.categories.map((c) => `<option value="${c.id}" ${f.categoryId === c.id ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
             </select>
           </div>
+          <div class="document-filter-actions">
+            <button type="button" class="btn btn-secondary" id="doc-more-filter" aria-expanded="${f.moreOpen}" aria-controls="document-filter-options">
+              <span id="doc-more-label">Filter lainnya${initFlags.advancedCount ? ` (${initFlags.advancedCount})` : ''}</span>${iconSvg('chevronDown')}
+            </button>
+            <button type="button" class="btn btn-ghost" id="doc-reset-filter" ${initFlags.canReset ? '' : 'hidden'}>Atur ulang</button>
+          </div>
+        </div>
+
+        <div class="document-filter-options" id="document-filter-options" ${f.moreOpen ? '' : 'hidden'}>
           <div class="field">
             <label for="doc-sort-filter">Urutkan</label>
             <select id="doc-sort-filter" class="select">
@@ -1736,18 +1838,44 @@
               <option value="UNIT_ASC" ${f.sortBy === 'UNIT_ASC' ? 'selected' : ''}>Unit kerja (A-Z)</option>
             </select>
           </div>
-          <div class="field">
-            <button type="button" class="btn btn-secondary" id="doc-reset-filter">Atur Ulang</button>
-          </div>
+          <label class="checkbox-row">
+            <input type="checkbox" id="doc-show-inactive" ${f.showInactive ? 'checked' : ''}>
+            <span>Tampilkan tidak aktif</span>
+          </label>
         </div>
-
-        <label class="checkbox-row">
-          <input type="checkbox" id="doc-show-inactive" ${f.showInactive ? 'checked' : ''}>
-          <span>Tampilkan tidak aktif</span>
-        </label>
       </section>
 
-      <section class="surface-panel" aria-labelledby="document-results-title">
+      <hr class="document-section-divider" aria-hidden="true">
+
+      <section class="surface-panel" id="doc-results-panel" aria-labelledby="document-results-title"></section>
+
+      ${live ? '' : `
+        <div class="bottom-action-bar">
+          <button type="button" class="btn btn-secondary" id="sim-skeleton-btn">Simulasi Muat Data</button>
+        </div>
+      `}
+    `;
+
+    function updateFilterChrome() {
+      const { advancedCount, canReset } = getFilterFlags();
+      const moreLabel = document.getElementById('doc-more-label');
+      if (moreLabel) moreLabel.textContent = `Filter lainnya${advancedCount ? ` (${advancedCount})` : ''}`;
+      const resetBtn = document.getElementById('doc-reset-filter');
+      if (resetBtn) resetBtn.hidden = !canReset;
+    }
+
+    function renderDocResults() {
+      updateFilterChrome();
+      const resultsPanel = document.getElementById('doc-results-panel');
+      if (!resultsPanel) return;
+      const { hasActiveFilters } = getFilterFlags();
+      const filtered = computeDocs();
+      const totalPages = Math.max(1, Math.ceil(filtered.length / f.pageSize));
+      if (f.page > totalPages) f.page = totalPages;
+      const start = (f.page - 1) * f.pageSize;
+      const rows = filtered.slice(start, start + f.pageSize);
+
+      resultsPanel.innerHTML = `
         <div class="document-results-header">
           <h2 class="section-heading" id="document-results-title">${hasActiveFilters ? 'Hasil filter' : myUnitsOnly ? 'Regulasi unit saya' : 'Regulasi seluruh unit'}</h2>
           <span class="tabular"><strong>${filtered.length}</strong> dokumen</span>
@@ -1779,46 +1907,73 @@
               : '<button type="button" class="btn btn-secondary" id="empty-reset-btn">Tampilkan Semua Dokumen</button>'}
           </div>
         ` : `
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Judul</th>
-                  <th>Nomor</th>
-                  <th>Unit</th>
-                  <th>Jenis</th>
-                  <th>Revisi</th>
-                  <th>Tanggal Berlaku</th>
-                  <th>Status Keberlakuan</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rows
-                  .map(({ doc, version, eff }) => {
-                    const unit = getUnit(doc.unit_id);
-                    const cat = getCategory(doc.category_id);
-                    return `
-                      <tr>
-                        <td>
-                          <a href="#/dokumen/${doc.id}" class="table-title-link">${esc(version.judul)}</a>
-                          <div class="table-sub">Kata kunci: ${esc(version.kata_kunci || '-')}</div>
-                        </td>
-                        <td class="tabular">${esc(version.nomor)}</td>
-                        <td>${esc(unit ? unit.nama : '-')}</td>
-                        <td>${esc(cat ? cat.label : '-')}</td>
-                        <td class="tabular">Rev ${esc(version.revisi_label)}</td>
-                        <td class="tabular">${esc(formatDateID(version.tgl_berlaku))}</td>
-                        <td>
-                          ${doc.status_aktif === 'TIDAK_AKTIF'
-                            ? '<span class="status-pill status-danger">Tidak Aktif</span>'
-                            : `<span class="status-pill status-${eff.tone}">${esc(eff.label)}</span>`}
-                        </td>
-                      </tr>
-                    `;
-                  })
-                  .join('')}
-              </tbody>
-            </table>
+          <div class="responsive-table-region">
+            <div class="table-wrap responsive-table">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Judul</th>
+                    <th>Nomor / Revisi</th>
+                    <th>Unit</th>
+                    <th>Jenis</th>
+                    <th>Tanggal Berlaku</th>
+                    <th>Status Keberlakuan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rows
+                    .map(({ doc, version, eff }) => {
+                      const unit = getUnit(doc.unit_id);
+                      const cat = getCategory(doc.category_id);
+                      return `
+                        <tr class="document-link-row">
+                          <td>
+                            <a href="#/dokumen/${doc.id}" class="table-title-link">${esc(version.judul)}</a>
+                          </td>
+                          <td class="tabular">
+                            <div>${esc(version.nomor)}</div>
+                            <div class="table-sub">Rev ${esc(version.revisi_label)}</div>
+                          </td>
+                          <td>${esc(unit ? unit.nama : '-')}</td>
+                          <td>${esc(cat ? cat.label : '-')}</td>
+                          <td class="tabular">${esc(formatDateID(version.tgl_berlaku))}</td>
+                          <td>
+                            ${doc.status_aktif === 'TIDAK_AKTIF'
+                              ? '<span class="status-pill status-danger">Tidak Aktif</span>'
+                              : `<span class="status-pill status-${eff.tone}">${esc(eff.label)}</span>`}
+                          </td>
+                        </tr>
+                      `;
+                    })
+                    .join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <ul class="responsive-cards" role="list">
+              ${rows
+                .map(({ doc, version, eff }) => {
+                  const unit = getUnit(doc.unit_id);
+                  const cat = getCategory(doc.category_id);
+                  return `
+                    <li class="responsive-card document-link-row">
+                      <div class="responsive-card-head">
+                        <h3><a href="#/dokumen/${doc.id}" class="table-title-link">${esc(version.judul)}</a></h3>
+                        ${doc.status_aktif === 'TIDAK_AKTIF'
+                          ? '<span class="status-pill status-danger">Tidak Aktif</span>'
+                          : `<span class="status-pill status-${eff.tone}">${esc(eff.label)}</span>`}
+                      </div>
+                      <dl>
+                        <div><dt>Nomor</dt><dd class="tabular">${esc(version.nomor)} · Rev ${esc(version.revisi_label)}</dd></div>
+                        <div><dt>Unit</dt><dd>${esc(unit ? unit.nama : '-')}</dd></div>
+                        <div><dt>Jenis</dt><dd>${esc(cat ? cat.label : '-')}</dd></div>
+                        <div><dt>Berlaku</dt><dd class="tabular">${esc(formatDateID(version.tgl_berlaku))}</dd></div>
+                      </dl>
+                    </li>
+                  `;
+                })
+                .join('')}
+            </ul>
           </div>
 
           <div class="pagination-bar">
@@ -1835,50 +1990,68 @@
             </div>
           </div>
         `}
-      </section>
+      `;
 
-      <div class="bottom-action-bar">
-        <button type="button" class="btn btn-secondary" id="sim-skeleton-btn">Simulasi Muat Data</button>
-      </div>
-    `;
+      const emptyReset = document.getElementById('empty-reset-btn');
+      if (emptyReset) emptyReset.onclick = resetFilters;
+
+      const ps = document.getElementById('doc-pagesize');
+      if (ps) ps.onchange = (e) => { f.pageSize = Number(e.target.value); f.page = 1; renderDocResults(); };
+      const prev = document.getElementById('doc-prev-page');
+      if (prev) prev.onclick = () => { if (f.page > 1) { f.page--; renderDocResults(); } };
+      const next = document.getElementById('doc-next-page');
+      if (next) next.onclick = () => { if (f.page < totalPages) { f.page++; renderDocResults(); } };
+
+      enhanceSelects(resultsPanel);
+    }
+
+    const resetFilters = () => {
+      const fresh = { q: '', unitId: '', categoryId: '', sortBy: 'TERBARU', showInactive: false, moreOpen: false, pageSize: f.pageSize, page: 1, loading: false };
+      if (myUnitsOnly) state.myUnitDocFilters = fresh;
+      else state.docFilters = fresh;
+      viewDaftarDokumen({ myUnitsOnly });
+      document.getElementById('doc-search-input')?.focus();
+    };
 
     const searchInput = document.getElementById('doc-search-input');
     searchInput.addEventListener('input', (e) => {
       f.q = e.target.value;
       f.page = 1;
-      viewDaftarDokumen({ myUnitsOnly });
-      const restored = document.getElementById('doc-search-input');
-      restored.focus();
-      restored.setSelectionRange(restored.value.length, restored.value.length);
+      renderDocResults();
     });
     const unitFilterEl = document.getElementById('doc-unit-filter');
-    if (unitFilterEl) unitFilterEl.onchange = (e) => { f.unitId = e.target.value; f.page = 1; viewDaftarDokumen({ myUnitsOnly }); };
-    document.getElementById('doc-cat-filter').onchange = (e) => { f.categoryId = e.target.value; f.page = 1; viewDaftarDokumen({ myUnitsOnly }); };
-    document.getElementById('doc-sort-filter').onchange = (e) => { f.sortBy = e.target.value; f.page = 1; viewDaftarDokumen({ myUnitsOnly }); };
-    document.getElementById('doc-show-inactive').onchange = (e) => { f.showInactive = e.target.checked; f.page = 1; viewDaftarDokumen({ myUnitsOnly }); };
-    document.getElementById('doc-reset-filter').onclick = () => {
-      const fresh = { q: '', unitId: '', categoryId: '', sortBy: 'TERBARU', showInactive: false, pageSize: f.pageSize, page: 1, loading: false };
-      if (myUnitsOnly) state.myUnitDocFilters = fresh;
-      else state.docFilters = fresh;
-      viewDaftarDokumen({ myUnitsOnly });
+    if (unitFilterEl) unitFilterEl.onchange = (e) => { f.unitId = e.target.value; f.page = 1; renderDocResults(); };
+    document.getElementById('doc-cat-filter').onchange = (e) => { f.categoryId = e.target.value; f.page = 1; renderDocResults(); };
+    const moreButton = document.getElementById('doc-more-filter');
+    moreButton.onclick = () => {
+      f.moreOpen = !f.moreOpen;
+      document.getElementById('document-filter-options').hidden = !f.moreOpen;
+      moreButton.setAttribute('aria-expanded', String(f.moreOpen));
     };
-    const emptyReset = document.getElementById('empty-reset-btn');
-    if (emptyReset) emptyReset.onclick = () => document.getElementById('doc-reset-filter').click();
-
-    document.getElementById('sim-skeleton-btn').onclick = () => {
-      f.loading = true;
-      viewDaftarDokumen({ myUnitsOnly });
-      setTimeout(() => { f.loading = false; viewDaftarDokumen({ myUnitsOnly }); }, 650);
+    document.getElementById('doc-sort-filter').onchange = (e) => {
+      f.sortBy = e.target.value;
+      f.page = 1;
+      renderDocResults();
     };
+    document.getElementById('doc-show-inactive').onchange = (e) => {
+      f.showInactive = e.target.checked;
+      f.page = 1;
+      renderDocResults();
+    };
+    const reset = document.getElementById('doc-reset-filter');
+    if (reset) reset.onclick = resetFilters;
 
-    const ps = document.getElementById('doc-pagesize');
-    if (ps) ps.onchange = (e) => { f.pageSize = Number(e.target.value); f.page = 1; viewDaftarDokumen({ myUnitsOnly }); };
-    const prev = document.getElementById('doc-prev-page');
-    if (prev) prev.onclick = () => { if (f.page > 1) { f.page--; viewDaftarDokumen({ myUnitsOnly }); } };
-    const next = document.getElementById('doc-next-page');
-    if (next) next.onclick = () => { if (f.page < totalPages) { f.page++; viewDaftarDokumen({ myUnitsOnly }); } };
+    const simSkeletonBtn = document.getElementById('sim-skeleton-btn');
+    if (simSkeletonBtn) {
+      simSkeletonBtn.onclick = () => {
+        f.loading = true;
+        renderDocResults();
+        setTimeout(() => { f.loading = false; renderDocResults(); }, 650);
+      };
+    }
 
     enhanceSelects(main);
+    renderDocResults();
   }
 
   function viewDetailDokumen(docId) {
@@ -1908,9 +2081,10 @@
     }
 
     const { map, currentBerlakuId } = computeEffectiveStatuses(docId);
+    const currentVersion = published.find((v) => v.id === currentBerlakuId);
     const activeVersion =
       published.find((v) => v.id === state.selectedDetailVersionId) ||
-      published.find((v) => v.id === currentBerlakuId) ||
+      currentVersion ||
       published[0];
     state.selectedDetailVersionId = activeVersion.id;
 
@@ -1923,15 +2097,39 @@
     const detailScanAtt = getScanPdfAttachment(activeVersion);
     const detailScanUrl = getScanPdfUrl(activeVersion);
     const detailPreviewMode = getActivePreviewMode(activeVersion);
+    const isActiveDocument = doc.status_aktif === 'AKTIF';
+    const pdfUrl = (detailPreviewMode === 'SCAN' && detailScanUrl) ||
+      (live ? fileUrl(activeVersion) : null);
 
     main.innerHTML = `
       <div class="page-header">
         <div>
           <a href="#${esc(state.lastListRoute || '/dokumen')}" class="btn btn-ghost btn-compact" style="margin-bottom:8px;">${iconSvg('arrowLeft')}<span>${state.lastListRoute === '/dokumen-unit' ? 'Kembali ke Dokumen Unit Saya' : 'Kembali ke Daftar Dokumen'}</span></a>
           <h1 class="page-title">${esc(activeVersion.judul)}</h1>
-          <p class="page-subtitle tabular">${esc(activeVersion.nomor)} · Revisi ${esc(activeVersion.revisi_label)} · ${esc(unit ? unit.nama : '-')}</p>
+          <p class="page-subtitle tabular">${esc(activeVersion.nomor)} · ${esc(unit ? unit.nama : '-')}</p>
+          <div class="document-version-context">
+            <span class="status-pill status-${isActiveDocument ? eff.tone : 'danger'}">${esc(isActiveDocument ? eff.label : 'Tidak Aktif')} · Rev ${esc(activeVersion.revisi_label)}</span>
+            ${isActiveDocument && currentVersion && currentVersion.id !== activeVersion.id ? `
+              <button type="button" class="btn btn-ghost btn-compact" id="detail-current-version-btn">Lihat versi yang berlaku · Rev ${esc(currentVersion.revisi_label)}</button>
+            ` : ''}
+          </div>
+        </div>
+        <div class="page-actions">
+          ${pdfUrl
+            ? `<a href="${esc(pdfUrl)}" target="_blank" rel="noopener" class="btn btn-primary">${iconSvg('doc')}<span>Buka PDF di tab baru</span></a>`
+            : `<button type="button" class="btn btn-primary" id="detail-expand-preview-btn">${iconSvg('doc')}<span>Perbesar pratinjau</span></button>`}
         </div>
       </div>
+
+      ${pdfUrl ? '' : `
+        <dialog class="modal-dialog document-preview-dialog" id="detail-preview-dialog" aria-labelledby="detail-preview-dialog-title">
+          <div class="modal-header">
+            <h2 id="detail-preview-dialog-title" class="section-heading">Pratinjau dokumen · Rev ${esc(activeVersion.revisi_label)}</h2>
+            <form method="dialog"><button type="submit" class="btn btn-secondary" autofocus>Tutup</button></form>
+          </div>
+          <div class="modal-body">${renderA4Sheet(activeVersion, doc)}</div>
+        </dialog>
+      `}
 
       ${doc.status_aktif === 'TIDAK_AKTIF' ? `
         <div class="notice-banner danger" role="status">
@@ -2040,6 +2238,16 @@
         ${canManage ? `<button type="button" class="btn ${doc.status_aktif === 'AKTIF' ? 'btn-danger' : 'btn-secondary'}" id="detail-toggle-aktif-btn">${doc.status_aktif === 'AKTIF' ? 'Nonaktifkan Dokumen' : 'Aktifkan Kembali'}</button>` : ''}
       </div>
     `;
+
+    const currentVersionButton = document.getElementById('detail-current-version-btn');
+    if (currentVersionButton) currentVersionButton.onclick = () => {
+      state.selectedDetailVersionId = currentVersion.id;
+      viewDetailDokumen(docId);
+      main.querySelector('.page-actions a, .page-actions button')?.focus();
+    };
+
+    const expandButton = document.getElementById('detail-expand-preview-btn');
+    if (expandButton) expandButton.onclick = () => document.getElementById('detail-preview-dialog').showModal();
 
     main.querySelectorAll('[data-preview-mode]').forEach((btn) => {
       btn.onclick = () => {
@@ -2184,12 +2392,23 @@
       return;
     }
 
-    const items = state.versions
-      .filter((v) => {
-        if (v.status === 'DIHAPUS' || v.status === 'DISETUJUI') return false;
-        const doc = state.documents.find((d) => d.id === v.document_id);
-        return doc && canEditUnit(user, doc.unit_id);
-      })
+    const unitSubmissions = state.versions.filter((v) => {
+      if (v.status === 'DIHAPUS' || v.status === 'DISETUJUI') return false;
+      const doc = state.documents.find((d) => d.id === v.document_id);
+      return doc && canEditUnit(user, doc.unit_id);
+    });
+    const statusOptions = [
+      ['DRAF', 'edit'],
+      ['MENUNGGU_VERIFIKASI', 'clock'],
+      ['DIKEMBALIKAN', 'undo'],
+    ].map(([value, icon]) => ({
+      value,
+      icon,
+      ...getStatusBadge(value),
+      count: unitSubmissions.filter((version) => version.status === value).length,
+    }));
+
+    const items = unitSubmissions
       .filter((v) => state.pengajuanFilter === 'SEMUA' || v.status === state.pengajuanFilter)
       .sort((a, b) => {
         const cmpJudul = () => (a.judul || '').localeCompare(b.judul || '', 'id', { sensitivity: 'base' });
@@ -2226,24 +2445,21 @@
 
     main.innerHTML = `
       <div class="page-header">
-        <div>
-          <h1 class="page-title">Pengajuan Unit</h1>
-          <p class="page-subtitle">Kelola draf, pengajuan menunggu verifikasi Manajer, dan dokumen yang dikembalikan untuk perbaikan.</p>
-        </div>
+        <h1 class="page-title">Pengajuan Unit</h1>
         <div class="page-actions">
           <a href="#/pengajuan/baru" class="btn btn-primary">${iconSvg('plus')}<span>Buat Dokumen</span></a>
         </div>
       </div>
 
+      ${renderPageCounts('Jumlah pengajuan per status', statusOptions, { cards: true })}
+
       <section class="surface-panel">
         <div class="filter-subrow">
           <div class="segmented" role="group" aria-label="Filter status pengajuan">
             ${[
-              ['SEMUA', 'Semua'],
-              ['DRAF', 'Draf'],
-              ['MENUNGGU_VERIFIKASI', 'Menunggu Verifikasi'],
-              ['DIKEMBALIKAN', 'Dikembalikan'],
-            ].map(([val, lbl]) => `<button type="button" class="${state.pengajuanFilter === val ? 'active' : ''}" data-status-filter="${val}">${esc(lbl)}</button>`).join('')}
+              { value: 'SEMUA', label: 'Semua' },
+              ...statusOptions,
+            ].map(({ value, label }) => `<button type="button" class="${state.pengajuanFilter === value ? 'active' : ''}" data-status-filter="${value}" aria-pressed="${state.pengajuanFilter === value}">${esc(label)}</button>`).join('')}
           </div>
           <div class="filter-subrow-right">
             <div class="sort-inline">
@@ -2256,7 +2472,7 @@
                 <option value="UNIT_ASC" ${state.pengajuanSort === 'UNIT_ASC' ? 'selected' : ''}>Unit kerja (A-Z)</option>
               </select>
             </div>
-            <span class="tabular" style="font-size:var(--text-sm);color:var(--text-secondary);">Total <strong>${items.length}</strong> draf dan pengajuan</span>
+            <span class="tabular meta-label-sm">Total <strong>${items.length}</strong> draf dan pengajuan</span>
           </div>
         </div>
 
@@ -2268,50 +2484,84 @@
             <a href="#/pengajuan/baru" class="btn btn-primary">Buat Dokumen</a>
           </div>
         ` : `
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Judul</th>
-                  <th>Nomor</th>
-                  <th>Unit</th>
-                  <th>Jenis</th>
-                  <th>Metode</th>
-                  <th>Status</th>
-                  <th class="col-actions">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${items
-                  .map((v) => {
-                    const doc = state.documents.find((d) => d.id === v.document_id);
-                    const unit = getUnit(doc.unit_id);
-                    const cat = getCategory(doc.category_id);
-                    const badge = getStatusBadge(v.status);
-                    return `
-                      <tr>
-                        <td>
-                          <a href="#/pengajuan/${v.id}" class="table-title-link">${esc(v.judul || '(Tanpa Judul)')}</a>
-                          <div class="table-sub tabular">Rev ${esc(v.revisi_label)} · Berlaku ${esc(formatDateID(v.tgl_berlaku))}</div>
-                          ${v.status === 'DIKEMBALIKAN' && v.return_note ? `<div class="table-sub" style="color:var(--danger-text);">Catatan Manajer: ${esc(v.return_note)}</div>` : ''}
-                        </td>
-                        <td class="tabular">${esc(v.nomor || '-')}</td>
-                        <td>${esc(unit ? unit.nama : '-')}</td>
-                        <td>${esc(cat ? cat.label : '-')}</td>
-                        <td>${v.metode === 'TEMPLATE' ? 'Template' : 'Upload'}</td>
-                        <td><span class="status-pill status-${badge.tone}">${esc(badge.label)}</span></td>
-                        <td class="col-actions">
-                          <div class="table-actions">
-                            <a href="#/pengajuan/${v.id}" class="btn btn-secondary btn-compact">${v.status === 'MENUNGGU_VERIFIKASI' ? 'Lihat' : 'Edit'}</a>
-                            <button type="button" class="row-menu-btn" data-pengajuan-menu="${v.id}" aria-label="Aksi lainnya untuk ${esc(v.judul || 'draf')}" aria-haspopup="menu" aria-expanded="false">${iconSvg('dots')}</button>
-                          </div>
-                        </td>
-                      </tr>
-                    `;
-                  })
-                  .join('')}
-              </tbody>
-            </table>
+          <div class="responsive-table-region">
+            <div class="table-wrap responsive-table">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Judul</th>
+                    <th>Nomor</th>
+                    <th>Unit</th>
+                    <th>Jenis</th>
+                    <th>Metode</th>
+                    <th>Status</th>
+                    <th class="col-actions">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${items
+                    .map((v) => {
+                      const doc = state.documents.find((d) => d.id === v.document_id);
+                      const unit = getUnit(doc.unit_id);
+                      const cat = getCategory(doc.category_id);
+                      const badge = getStatusBadge(v.status);
+                      const awaitingReview = v.status === 'MENUNGGU_VERIFIKASI';
+                      return `
+                        <tr>
+                          <td>
+                            <a href="#/pengajuan/${v.id}" class="table-title-link">${esc(v.judul || '(Tanpa Judul)')}</a>
+                            <div class="table-sub tabular">Rev ${esc(v.revisi_label)} · Berlaku ${esc(formatDateID(v.tgl_berlaku))}</div>
+                            ${v.status === 'DIKEMBALIKAN' && v.return_note ? `<div class="table-sub" style="color:var(--danger-text);">Catatan Manajer: ${esc(v.return_note)}</div>` : ''}
+                          </td>
+                          <td class="tabular">${esc(v.nomor || '-')}</td>
+                          <td>${esc(unit ? unit.nama : '-')}</td>
+                          <td>${esc(cat ? cat.label : '-')}</td>
+                          <td>${v.metode === 'TEMPLATE' ? 'Template' : 'Upload'}</td>
+                          <td><span class="status-pill status-${badge.tone}">${esc(badge.label)}</span></td>
+                          <td class="col-actions">
+                            <div class="table-actions">
+                              <a href="#/pengajuan/${v.id}" class="btn ${awaitingReview ? 'btn-secondary' : 'btn-submission-edit'} btn-compact">${awaitingReview ? 'Lihat' : 'Edit'}</a>
+                              <button type="button" class="row-menu-btn" data-pengajuan-menu="${v.id}" aria-label="Aksi lainnya untuk ${esc(v.judul || 'draf')}" aria-haspopup="menu" aria-expanded="false">${iconSvg('dots')}</button>
+                            </div>
+                          </td>
+                        </tr>
+                      `;
+                    })
+                    .join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <ul class="responsive-cards" role="list">
+              ${items
+                .map((v) => {
+                  const doc = state.documents.find((d) => d.id === v.document_id);
+                  const unit = getUnit(doc.unit_id);
+                  const cat = getCategory(doc.category_id);
+                  const badge = getStatusBadge(v.status);
+                  const awaitingReview = v.status === 'MENUNGGU_VERIFIKASI';
+                  return `
+                    <li class="responsive-card">
+                      <div class="responsive-card-head">
+                        <h3><a href="#/pengajuan/${v.id}" class="table-title-link">${esc(v.judul || '(Tanpa Judul)')}</a></h3>
+                        <span class="status-pill status-${badge.tone}">${esc(badge.label)}</span>
+                      </div>
+                      ${v.status === 'DIKEMBALIKAN' && v.return_note ? `<div class="responsive-card-note">Catatan Manajer: ${esc(v.return_note)}</div>` : ''}
+                      <dl>
+                        <div><dt>Nomor</dt><dd class="tabular">${esc(v.nomor || '-')} · Rev ${esc(v.revisi_label)}</dd></div>
+                        <div><dt>Unit</dt><dd>${esc(unit ? unit.nama : '-')}</dd></div>
+                        <div><dt>Jenis</dt><dd>${esc(cat ? cat.label : '-')}</dd></div>
+                        <div><dt>Metode</dt><dd>${v.metode === 'TEMPLATE' ? 'Template' : 'Upload'} · Berlaku ${esc(formatDateID(v.tgl_berlaku))}</dd></div>
+                      </dl>
+                      <div class="responsive-card-actions">
+                        <a href="#/pengajuan/${v.id}" class="btn ${awaitingReview ? 'btn-secondary' : 'btn-submission-edit'} btn-compact">${awaitingReview ? 'Lihat' : 'Edit'}</a>
+                        <button type="button" class="row-menu-btn" data-pengajuan-menu="${v.id}" aria-label="Aksi lainnya untuk ${esc(v.judul || 'draf')}" aria-haspopup="menu" aria-expanded="false">${iconSvg('dots')}</button>
+                      </div>
+                    </li>
+                  `;
+                })
+                .join('')}
+            </ul>
           </div>
         `}
       </section>
@@ -2427,7 +2677,7 @@
     main.innerHTML = `
       <div class="page-header">
         <div>
-          <a href="#/pengajuan" class="btn btn-ghost btn-compact" style="margin-bottom:8px;">${iconSvg('arrowLeft')}<span>Kembali ke Pengajuan Unit</span></a>
+          <a href="#/pengajuan" class="btn btn-ghost btn-compact back-link">${iconSvg('arrowLeft')}<span>Kembali ke Pengajuan Unit</span></a>
           <h1 class="page-title">Buat Dokumen Baru</h1>
           <p class="page-subtitle">Langkah 1 dari 2: pilih unit pemilik, jenis regulasi, dan metode penyusunan.</p>
         </div>
@@ -2450,7 +2700,7 @@
                 .map((c) => `
                   <button type="button" class="choice-option" role="radio" aria-checked="${state.draftStep1.categoryId === c.id}" data-cat-pick="${c.id}">
                     <strong>${esc(c.label)}</strong>
-                    <span class="tabular" style="font-size:var(--text-sm);color:var(--text-secondary);">Contoh: ${esc(c.contoh_nomor)}</span>
+                    <span class="tabular meta-label-sm">Contoh: ${esc(c.contoh_nomor)}</span>
                   </button>
                 `)
                 .join('')}
@@ -2462,19 +2712,19 @@
             <div class="choice-grid" role="radiogroup" aria-label="Pilih metode penyusunan">
               <button type="button" class="choice-option" role="radio" aria-checked="${state.draftStep1.metode === 'TEMPLATE'}" data-method-pick="TEMPLATE">
                 <strong>Buat dari Template</strong>
-                <span style="font-size:var(--text-sm);color:var(--text-secondary);">Isi bagian editor terstruktur sesuai Lampiran B dan generate PDF otomatis.</span>
+                <span class="meta-label-sm">Isi format resmi RS AN-NISA. Sistem akan membuat PDF.</span>
               </button>
               <button type="button" class="choice-option" role="radio" aria-checked="${state.draftStep1.metode === 'UPLOAD'}" data-method-pick="UPLOAD">
-                <strong>Upload Dokumen</strong>
-                <span style="font-size:var(--text-sm);color:var(--text-secondary);">Unggah PDF bertanda tangan / dokumen lama (unggah berpotongan &lt; 4 MB).</span>
+                <strong>Unggah PDF</strong>
+                <span class="meta-label-sm">Gunakan PDF yang sudah tersedia. Ukuran maksimal 20 MB.</span>
               </button>
             </div>
           </div>
         </div>
 
-        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:22px;padding-top:16px;border-top:1px solid var(--border-subtle);">
+        <div class="action-row-end">
           <a href="#/pengajuan" class="btn btn-secondary">Batal</a>
-          <button type="button" class="btn btn-primary" id="step1-continue-btn">Lanjut ke Editor & Metadata</button>
+          <button type="button" class="btn btn-primary" id="step1-continue-btn">Lanjut isi dokumen</button>
         </div>
       </section>
     `;
@@ -2482,16 +2732,34 @@
     document.getElementById('step1-unit').onchange = (e) => {
       state.draftStep1.unitId = e.target.value;
     };
+    const syncRadioGroup = (groupEl, activeBtn) => {
+      groupEl.querySelectorAll('[role="radio"]').forEach((option) => {
+        option.setAttribute('aria-checked', String(option === activeBtn));
+      });
+    };
+    main.querySelectorAll('[role="radiogroup"]').forEach((groupEl) => {
+      const radios = Array.from(groupEl.querySelectorAll('[role="radio"]'));
+      groupEl.onkeydown = (e) => {
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+        const idx = radios.indexOf(document.activeElement);
+        if (idx === -1) return;
+        e.preventDefault();
+        const delta = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
+        const nextBtn = radios[(idx + delta + radios.length) % radios.length];
+        nextBtn.click();
+        nextBtn.focus();
+      };
+    });
     main.querySelectorAll('[data-cat-pick]').forEach((btn) => {
       btn.onclick = () => {
         state.draftStep1.categoryId = btn.getAttribute('data-cat-pick');
-        viewBuatDokumenStep1();
+        syncRadioGroup(btn.closest('[role="radiogroup"]'), btn);
       };
     });
     main.querySelectorAll('[data-method-pick]').forEach((btn) => {
       btn.onclick = () => {
         state.draftStep1.metode = btn.getAttribute('data-method-pick');
-        viewBuatDokumenStep1();
+        syncRadioGroup(btn.closest('[role="radiogroup"]'), btn);
       };
     });
 
@@ -2573,7 +2841,7 @@
     main.innerHTML = `
       <div class="page-header">
         <div>
-          <a href="#/pengajuan" class="btn btn-ghost btn-compact" style="margin-bottom:8px;">${iconSvg('arrowLeft')}<span>Kembali ke Pengajuan Unit</span></a>
+          <a href="#/pengajuan" class="btn btn-ghost btn-compact back-link">${iconSvg('arrowLeft')}<span>Kembali ke Pengajuan Unit</span></a>
           <h1 class="page-title">${esc(ver.judul || 'Draf Dokumen Baru')}</h1>
           <p class="page-subtitle">${esc(unit ? unit.nama : '-')} · ${esc(cat ? cat.label : '-')} · Metode ${ver.metode === 'TEMPLATE' ? 'Template' : 'Upload'}</p>
         </div>
@@ -2582,8 +2850,8 @@
       ${isLocked ? `
         <div class="notice-banner" role="status">
           <div>
-            <strong>Diajukan pada ${esc(formatTimestamp(ver.submitted_at))} oleh ${esc(submitter?.nama || '-')}</strong>
-            <p>Isi pengajuan terkunci selama proses verifikasi Manajer.</p>
+            <strong>${esc(getStatusBadge(ver.status).label)}</strong>
+            <p>Diajukan pada ${esc(formatTimestamp(ver.submitted_at))} oleh ${esc(submitter?.nama || '-')}. Isi dokumen terkunci selama diperiksa.</p>
           </div>
         </div>
       ` : ''}
@@ -2605,14 +2873,14 @@
               <div class="field col-12">
                 <label for="meta-judul">Judul Dokumen <span class="req-mark">*</span></label>
                 <input id="meta-judul" class="input" value="${esc(ver.judul)}" ${isLocked ? 'disabled' : ''} placeholder="Masukkan judul resmi regulasi">
-                <p id="err-judul" class="field-error" hidden></p>
+                <p id="err-judul" class="field-error" role="alert" hidden></p>
               </div>
 
               <div class="field col-8">
                 <label for="meta-nomor">Nomor Dokumen (Manual) <span class="req-mark">*</span></label>
-                <input id="meta-nomor" class="input tabular" value="${esc(ver.nomor)}" ${isLocked ? 'disabled' : ''} placeholder="${esc(cat.contoh_nomor)}">
+                <input id="meta-nomor" class="input tabular ${conflictInfo && !conflictInfo.sameDoc ? 'is-invalid' : ''}" value="${esc(ver.nomor)}" ${isLocked ? 'disabled' : ''} placeholder="${esc(cat.contoh_nomor)}" ${conflictInfo && !conflictInfo.sameDoc ? 'aria-invalid="true" aria-describedby="err-nomor"' : ''}>
                 <p class="field-help">Contoh nomor ${esc(cat.label)}: <strong class="tabular">${esc(cat.contoh_nomor)}</strong></p>
-                <p id="err-nomor" class="field-error" ${conflictInfo ? '' : 'hidden'}>
+                <p id="err-nomor" class="field-error" role="alert" ${conflictInfo ? '' : 'hidden'}>
                   ${conflictInfo ? (conflictInfo.sameDoc
                     ? `Nomor sudah dipakai versi terbit dokumen ini.`
                     : `Nomor sudah dipakai oleh ${esc(conflictInfo.conflict.judul)}`) : ''}
@@ -2642,7 +2910,7 @@
               <div class="field col-12">
                 <label for="meta-ringkasan">Ringkasan Perubahan ${isRevision ? '<span class="req-mark">*</span>' : '(opsional)'}</label>
                 <textarea id="meta-ringkasan" class="textarea" ${isLocked ? 'disabled' : ''} placeholder="Jelaskan ringkas perubahan dari versi sebelumnya">${esc(ver.ringkasan_perubahan)}</textarea>
-                <p id="err-ringkasan" class="field-error" hidden></p>
+                <p id="err-ringkasan" class="field-error" role="alert" hidden></p>
               </div>
             </div>
           </section>
@@ -2684,8 +2952,13 @@
     `;
 
     function refreshLivePreview() {
-      const box = document.getElementById('live-a4-container');
-      if (box && getActivePreviewMode(ver) === 'CURRENT') box.innerHTML = renderA4Sheet(ver, doc, annotations);
+      clearTimeout(livePreviewTimer);
+      livePreviewTimer = setTimeout(() => {
+        const box = document.getElementById('live-a4-container');
+        if (box && getActivePreviewMode(ver) === 'CURRENT') {
+          box.innerHTML = `<div class="a4-sheet-scroll">${renderA4Sheet(ver, doc, annotations)}</div>`;
+        }
+      }, 120);
     }
 
     function refreshPreviewPane() {
@@ -2746,19 +3019,16 @@
       };
 
       bindMeta('meta-judul', 'judul', () => {
-        document.getElementById('err-judul').hidden = true;
-        document.getElementById('meta-judul').classList.remove('is-invalid');
+        setFieldValidation(document.getElementById('meta-judul'), document.getElementById('err-judul'), '');
       });
       bindMeta('meta-nomor', 'nomor', (val) => {
+        const inp = document.getElementById('meta-nomor');
         const err = document.getElementById('err-nomor');
         const c = checkNumberConflict(val, doc.id);
         if (c && !c.sameDoc) {
-          err.textContent = `Nomor sudah dipakai oleh ${c.conflict.judul}`;
-          err.hidden = false;
-          document.getElementById('meta-nomor').classList.add('is-invalid');
+          setFieldValidation(inp, err, `Nomor sudah dipakai oleh ${c.conflict.judul}`);
         } else {
-          err.hidden = true;
-          document.getElementById('meta-nomor').classList.remove('is-invalid');
+          setFieldValidation(inp, err, '');
         }
       });
       bindMeta('meta-revisi', 'revisi_label');
@@ -2766,7 +3036,7 @@
       bindMeta('meta-tgl-berlaku', 'tgl_berlaku');
       bindMeta('meta-keywords', 'kata_kunci');
       bindMeta('meta-ringkasan', 'ringkasan_perubahan', () => {
-        document.getElementById('err-ringkasan').hidden = true;
+        setFieldValidation(document.getElementById('meta-ringkasan'), document.getElementById('err-ringkasan'), '');
       });
 
       // Bind template section fields
@@ -2835,7 +3105,7 @@
         simBtn.onclick = () => {
           state.uploadSim = { progress: 100, fileName: `${normalizeDocNumber(ver.nomor || 'DOC')}.pdf`, sizeLabel: '2.4 MB', status: 'READY' };
           ver.attachments = [{ nama: state.uploadSim.fileName, ukuran: '2.4 MB' }];
-          showToast('Simulasi unggah berpotongan (< 4 MB per chunk) berhasil.', 'success');
+          showToast('PDF contoh siap diajukan.', 'success');
           viewEditDraf(versionId);
         };
       }
@@ -2855,26 +3125,19 @@
       document.getElementById('edit-submit-btn').onclick = async () => {
         let valid = true;
         if (!ver.judul.trim()) {
-          document.getElementById('err-judul').textContent = 'Judul wajib diisi';
-          document.getElementById('err-judul').hidden = false;
-          document.getElementById('meta-judul').classList.add('is-invalid');
+          setFieldValidation(document.getElementById('meta-judul'), document.getElementById('err-judul'), 'Judul wajib diisi');
           valid = false;
         }
         const c = checkNumberConflict(ver.nomor, doc.id);
         if (!ver.nomor.trim()) {
-          document.getElementById('err-nomor').textContent = 'Nomor wajib diisi';
-          document.getElementById('err-nomor').hidden = false;
-          document.getElementById('meta-nomor').classList.add('is-invalid');
+          setFieldValidation(document.getElementById('meta-nomor'), document.getElementById('err-nomor'), 'Nomor wajib diisi');
           valid = false;
         } else if (c && !c.sameDoc && (!live || ['MENUNGGU_VERIFIKASI', 'DISETUJUI'].includes(c.conflict.status))) {
-          document.getElementById('err-nomor').textContent = `Nomor sudah dipakai oleh ${c.conflict.judul}`;
-          document.getElementById('err-nomor').hidden = false;
-          document.getElementById('meta-nomor').classList.add('is-invalid');
+          setFieldValidation(document.getElementById('meta-nomor'), document.getElementById('err-nomor'), `Nomor sudah dipakai oleh ${c.conflict.judul}`);
           valid = false;
         }
         if (isRevision && !ver.ringkasan_perubahan.trim()) {
-          document.getElementById('err-ringkasan').textContent = 'Ringkasan perubahan wajib diisi untuk revisi';
-          document.getElementById('err-ringkasan').hidden = false;
+          setFieldValidation(document.getElementById('meta-ringkasan'), document.getElementById('err-ringkasan'), 'Ringkasan perubahan wajib diisi untuk revisi');
           valid = false;
         }
 
@@ -2899,7 +3162,8 @@
         });
         if (!res) return;
 
-        if (live) return writeAction(versionPath(ver.id, '/submit'), 'POST', draftInput(ver), 'Pengajuan dikirim ke Manajer', () => {
+        const submittedMessage = 'Pengajuan terkirim. Status: Menunggu verifikasi.';
+        if (live) return writeAction(versionPath(ver.id, '/submit'), 'POST', draftInput(ver), submittedMessage, () => {
           state.dirtyDraft = false;
           renderRoute();
         });
@@ -2927,7 +3191,7 @@
             created_at: ver.submitted_at,
           });
         });
-        showToast('Pengajuan dikirim ke Manajer', 'success');
+        showToast(submittedMessage, 'success');
         viewEditDraf(versionId);
       };
     } else {
@@ -2965,7 +3229,7 @@
                       .map((item, idx) => `
                         <div class="sortable-row">
                           <span class="sortable-num">${idx + 1}.</span>
-                          <textarea class="textarea" data-list-code="${s.code}" data-list-idx="${idx}" ${isLocked ? 'disabled' : ''}>${esc(item)}</textarea>
+                          <textarea class="textarea" data-list-code="${s.code}" data-list-idx="${idx}" aria-label="${esc(s.label)} butir ${idx + 1}" ${isLocked ? 'disabled' : ''}>${esc(item)}</textarea>
                           ${!isLocked ? `
                             <div class="sortable-actions">
                               <button type="button" class="icon-btn" data-list-act="up" data-code="${s.code}" data-idx="${idx}" aria-label="Pindah ke atas" ${idx === 0 ? 'disabled' : ''}>${iconSvg('up')}</button>
@@ -3031,7 +3295,7 @@
     const attachments = (ver.attachments || []).filter((file) => !live || file.kind === 'PDF');
     const scanUrl = getScanPdfUrl(ver);
     return `
-      <h2 class="section-heading">Unggah Berkas Dokumen (Resumable &lt; 4 MB per Potongan)</h2>
+      <h2 class="section-heading">Unggah berkas PDF</h2>
       <div class="upload-zone ${state.uploadSim.status === 'UPLOADING' ? 'active' : ''}">
         <p style="margin:0 0 10px;">Berkas utama wajib berformat <strong>PDF</strong> (maksimal 20 MB). Berkas sumber DOCX dan lampiran opsional.</p>
         ${!isLocked ? `
@@ -3040,7 +3304,7 @@
             ${live ? '' : '<button type="button" class="btn btn-secondary" id="sim-upload-sample">Simulasi Unggah PDF Resmi</button>'}
           </div>
         ` : ''}
-        <p id="err-upload" class="field-error" hidden style="margin-top:8px;"></p>
+        <p id="err-upload" class="field-error" role="alert" hidden style="margin-top:8px;"></p>
         ${state.uploadSim.status === 'UPLOADING' ? `
           <div class="progress-track"><div class="progress-fill" style="width:${state.uploadSim.progress}%"></div></div>
           <p class="field-help tabular" style="margin-top:6px;">Mengunggah ${esc(state.uploadSim.fileName)} (${state.uploadSim.progress}%)</p>
@@ -3109,6 +3373,21 @@
       }
     });
 
+    const reviewRows = rows.map((version) => {
+      const doc = state.documents.find((d) => d.id === version.document_id);
+      const needsReview = version.status === 'MENUNGGU_VERIFIKASI';
+      return {
+        version,
+        unit: getUnit(doc.unit_id)?.nama || '-',
+        category: getCategory(doc.category_id)?.label || '-',
+        submittedAt: formatTimestamp(version.submitted_at),
+        badge: getStatusBadge(version.status),
+        href: `#/verifikasi/${version.id}`,
+        actionClass: needsReview ? 'btn-primary' : 'btn-secondary',
+        actionLabel: needsReview ? 'Periksa' : 'Detail',
+      };
+    });
+
     main.innerHTML = `
       <div class="page-header">
         <div>
@@ -3144,49 +3423,55 @@
             <p>Semua pengajuan dari unit di bawah koordinasi Anda telah diputuskan.</p>
           </div>
         ` : `
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Judul</th>
-                  <th>Nomor</th>
-                  <th>Unit</th>
-                  <th>Jenis</th>
-                  <th>Revisi</th>
-                  <th>Diajukan oleh</th>
-                  <th>Tanggal Ajuan</th>
-                  <th>Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rows
-                  .map((v) => {
-                    const doc = state.documents.find((d) => d.id === v.document_id);
-                    const unit = getUnit(doc.unit_id);
-                    const cat = getCategory(doc.category_id);
-                    const creator = getUser(v.created_by);
-                    const badge = getStatusBadge(v.status);
-                    return `
+          <div class="review-queue-results">
+            <div class="table-wrap review-queue-table">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Judul</th>
+                    <th>Nomor</th>
+                    <th>Unit</th>
+                    <th>Jenis</th>
+                    <th>Revisi</th>
+                    <th>Diajukan oleh</th>
+                    <th>Tanggal Ajuan</th>
+                    <th>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${reviewRows.map(({ version: v, unit, category, submittedAt, badge, href, actionClass, actionLabel }) => `
                       <tr>
                         <td>
-                          <a href="#/verifikasi/${v.id}" class="table-title-link">${esc(v.judul)}</a>
+                          <a href="${href}" class="table-title-link">${esc(v.judul)}</a>
                           <div class="table-sub"><span class="status-pill status-${badge.tone}">${esc(badge.label)}</span></div>
                         </td>
                         <td class="tabular">${esc(v.nomor)}</td>
-                        <td>${esc(unit ? unit.nama : '-')}</td>
-                        <td>${esc(cat ? cat.label : '-')}</td>
+                        <td>${esc(unit)}</td>
+                        <td>${esc(category)}</td>
                         <td class="tabular">Rev ${esc(v.revisi_label)}</td>
-                        <td>${esc(creator ? creator.nama : '-')}</td>
-                        <td class="tabular">${esc(formatTimestamp(v.submitted_at))}</td>
+                        <td>${esc(getUser(v.created_by)?.nama || '-')}</td>
+                        <td class="tabular">${esc(submittedAt)}</td>
                         <td>
-                          <a href="#/verifikasi/${v.id}" class="btn ${v.status === 'MENUNGGU_VERIFIKASI' ? 'btn-primary' : 'btn-secondary'} btn-compact">${v.status === 'MENUNGGU_VERIFIKASI' ? 'Periksa' : 'Detail'}</a>
+                          <a href="${href}" class="btn ${actionClass} btn-compact">${actionLabel}</a>
                         </td>
                       </tr>
-                    `;
-                  })
-                  .join('')}
-              </tbody>
-            </table>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+            <ul class="review-queue-cards" role="list">
+              ${reviewRows.map(({ version, unit, badge, href, actionClass, actionLabel }) => `
+                <li class="review-queue-card">
+                  <h2>${esc(version.judul)}</h2>
+                  <span class="status-pill status-${badge.tone}">${esc(badge.label)}</span>
+                  <dl>
+                    <div><dt>Unit</dt><dd>${esc(unit)}</dd></div>
+                    <div><dt>Diajukan</dt><dd class="tabular">${esc(formatDateID(version.submitted_at))}</dd></div>
+                  </dl>
+                  <a href="${href}" class="btn ${actionClass}" aria-label="${actionLabel} ${esc(version.judul)}">${actionLabel}</a>
+                </li>
+              `).join('')}
+            </ul>
           </div>
         `}
       </section>
@@ -3271,12 +3556,12 @@
           </section>
 
           <section class="surface-panel">
-            <h2 class="section-heading">Jejak Pengajuan & Keputusan (Review_Log)</h2>
+            <h2 class="section-heading">Jejak Pengajuan & Keputusan</h2>
             <ul class="timeline">
               ${logs.length ? logs.map((l) => `
                 <li class="timeline-item" style="cursor:default;">
                   <div class="timeline-top">
-                    <strong>${esc(l.aksi)} - ${esc(getUser(l.user_id)?.nama || '-')}</strong>
+                    <strong>${esc(formatReviewActionLabel(l.aksi))} - ${esc(getUser(l.user_id)?.nama || '-')}</strong>
                     <span class="timeline-meta tabular">${esc(formatTimestamp(l.created_at))}</span>
                   </div>
                   <div style="font-size:var(--text-sm);">${esc(l.catatan)}</div>
@@ -3327,7 +3612,8 @@
       document.getElementById('verif-approve-btn').onclick = async () => {
         const res = await openDialog({
           title: 'Setujui dan Terbitkan Dokumen',
-          bodyHtml: `<p>Dokumen <strong>${esc(ver.judul)}</strong> (${esc(ver.nomor)}) akan langsung diterbitkan dan dapat dibaca seluruh staf.</p>`,
+          bodyHtml: `<p>Dokumen <strong>${esc(ver.judul)}</strong> (${esc(ver.nomor)} · Rev ${esc(ver.revisi_label)}) akan langsung diterbitkan dan dapat dibaca seluruh staf.</p>
+            <p><strong>Mulai berlaku pada ${esc(formatDateID(ver.tgl_berlaku))}.</strong></p>`,
           confirmLabel: 'Ya, Setujui & Terbitkan',
         });
         if (!res) return;
@@ -3440,7 +3726,7 @@
               .map((n) => `
                 <li class="timeline-item ${n.is_read ? '' : 'selected'}" data-nid="${n.id}" data-url="${n.url}" tabindex="0" role="button">
                   <div class="timeline-top">
-                    <strong>${esc(n.jenis)}</strong>
+                    <strong>${esc(formatNotifTypeLabel(n.jenis))}</strong>
                     <span class="status-pill status-${n.is_read ? 'neutral' : 'info'}">${n.is_read ? 'Dibaca' : 'Baru'}</span>
                   </div>
                   <div>${esc(n.pesan)}</div>
@@ -3458,12 +3744,19 @@
     `;
 
     main.querySelectorAll('.timeline-item').forEach((el) => {
-      el.onclick = () => {
+      const openNotice = () => {
         const id = el.getAttribute('data-nid');
         if (live) return writeAction('notifications/read', 'POST', { id }, '', () => navigate(el.getAttribute('data-url')));
         const item = state.notifications.find((n) => n.id === id);
         if (item) item.is_read = true;
         navigate(el.getAttribute('data-url'));
+      };
+      el.onclick = openNotice;
+      el.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openNotice();
+        }
       };
     });
 
@@ -3501,8 +3794,6 @@
   function viewAdminUnit() {
     if (!requireSuperAdmin()) return;
     const main = document.getElementById('main-content');
-    const q = state.adminUnitSearch.trim().toLowerCase();
-    const list = state.units.filter((u) => !q || `${u.kode} ${u.nama}`.toLowerCase().includes(q));
 
     main.innerHTML = `
       <div class="page-header">
@@ -3517,70 +3808,165 @@
 
       <section class="surface-panel">
         <div class="filter-subrow">
-          <div class="field" style="min-width:280px;">
+          <div class="field admin-search-field">
             <label for="unit-search">Cari kode atau nama unit</label>
-            <input id="unit-search" class="input" value="${esc(state.adminUnitSearch)}" placeholder="Contoh: DTO, IGD, Farmasi">
+            <input id="unit-search" class="input" type="search" value="${esc(state.adminUnitSearch)}" placeholder="Contoh: DTO, IGD, Farmasi">
           </div>
-          <span class="tabular" style="font-size:var(--text-sm);color:var(--text-secondary);">Menampilkan ${list.length} dari ${state.units.length} unit</span>
+          <span id="admin-unit-count" class="tabular meta-label-sm"></span>
         </div>
 
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>No</th>
-                <th>Kode</th>
-                <th>Nama Unit</th>
-                <th>Folder Shared Drive</th>
-                <th>Dokumen</th>
-                <th>Koord./SPV</th>
-                <th>Manajer</th>
-                <th>Status</th>
-                <th class="col-actions">Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${list
-                .map((u, idx) => {
-                  const docCount = state.documents.filter((d) => d.unit_id === u.id).length;
-                  const koCount = state.userUnits.filter((uu) => uu.unit_id === u.id && uu.peran === 'KOORDINATOR' && uu.is_active).length;
-                  const mgrNames = state.userUnits
-                    .filter((uu) => uu.unit_id === u.id && uu.peran === 'MANAJER' && uu.is_active)
-                    .map((uu) => getUser(uu.user_id)?.nama)
-                    .filter(Boolean);
-                  return `
-                    <tr>
-                      <td class="tabular">${idx + 1}</td>
-                      <td class="tabular"><strong>${esc(u.kode)}</strong></td>
-                      <td>${esc(u.nama)}</td>
-                      <td class="tabular" style="color:var(--text-secondary);">[${esc(u.kode)} - ${esc(u.nama)}]</td>
-                      <td class="tabular">${docCount}</td>
-                      <td class="tabular">${koCount}</td>
-                      <td>${esc(mgrNames.join(', ') || 'Belum disetel')}</td>
-                      <td><span class="status-pill status-${u.is_active ? 'success' : 'danger'}">${u.is_active ? 'Aktif' : 'Nonaktif'}</span></td>
-                      <td class="col-actions">
-                        <div class="table-actions">
-                          <button type="button" class="btn btn-secondary btn-compact" data-unit-toggle="${u.id}">${u.is_active ? 'Nonaktifkan' : 'Aktifkan'}</button>
-                          <button type="button" class="row-menu-btn" data-unit-menu="${u.id}" aria-label="Aksi lainnya unit ${esc(u.nama)}" aria-haspopup="menu" aria-expanded="false">${iconSvg('dots')}</button>
-                        </div>
-                      </td>
-                    </tr>
-                  `;
-                })
-                .join('')}
-            </tbody>
-          </table>
-        </div>
+        <div id="admin-unit-results"></div>
       </section>
-
     `;
+
+    function renderUnitResults() {
+      const q = state.adminUnitSearch.trim().toLowerCase();
+      const list = state.units.filter((u) => !q || `${u.kode} ${u.nama}`.toLowerCase().includes(q));
+      const countEl = document.getElementById('admin-unit-count');
+      if (countEl) countEl.textContent = `Menampilkan ${list.length} dari ${state.units.length} unit`;
+      const resultsEl = document.getElementById('admin-unit-results');
+      if (!resultsEl) return;
+
+      if (!list.length) {
+        resultsEl.innerHTML = `
+          <div class="empty-state">
+            ${iconSvg('building')}
+            <h3>Unit tidak ditemukan</h3>
+            <p>Ubah kata kunci pencarian kode atau nama unit.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const rowData = list.map((u, idx) => {
+        const docCount = state.documents.filter((d) => d.unit_id === u.id).length;
+        const koCount = state.userUnits.filter((uu) => uu.unit_id === u.id && uu.peran === 'KOORDINATOR' && uu.is_active).length;
+        const mgrNames = state.userUnits
+          .filter((uu) => uu.unit_id === u.id && uu.peran === 'MANAJER' && uu.is_active)
+          .map((uu) => getUser(uu.user_id)?.nama)
+          .filter(Boolean);
+        return { u, idx, docCount, koCount, mgrNames };
+      });
+
+      resultsEl.innerHTML = `
+        <div class="responsive-table-region">
+          <div class="table-wrap responsive-table">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>No</th>
+                  <th>Kode</th>
+                  <th>Nama Unit</th>
+                  <th>Folder Shared Drive</th>
+                  <th>Dokumen</th>
+                  <th>Koord./SPV</th>
+                  <th>Manajer</th>
+                  <th>Status</th>
+                  <th class="col-actions">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowData.map(({ u, idx, docCount, koCount, mgrNames }) => `
+                  <tr>
+                    <td class="tabular">${idx + 1}</td>
+                    <td class="tabular"><strong>${esc(u.kode)}</strong></td>
+                    <td>${esc(u.nama)}</td>
+                    <td class="tabular meta-label-sm">[${esc(u.kode)} - ${esc(u.nama)}]</td>
+                    <td class="tabular">${docCount}</td>
+                    <td class="tabular">${koCount}</td>
+                    <td>${esc(mgrNames.join(', ') || 'Belum disetel')}</td>
+                    <td><span class="status-pill status-${u.is_active ? 'success' : 'danger'}">${u.is_active ? 'Aktif' : 'Nonaktif'}</span></td>
+                    <td class="col-actions">
+                      <div class="table-actions">
+                        <button type="button" class="btn btn-secondary btn-compact" data-unit-toggle="${u.id}">${u.is_active ? 'Nonaktifkan' : 'Aktifkan'}</button>
+                        <button type="button" class="row-menu-btn" data-unit-menu="${u.id}" aria-label="Aksi lainnya unit ${esc(u.nama)}" aria-haspopup="menu" aria-expanded="false">${iconSvg('dots')}</button>
+                      </div>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <ul class="responsive-cards" role="list">
+            ${rowData.map(({ u, docCount, koCount, mgrNames }) => `
+              <li class="responsive-card">
+                <div class="responsive-card-head">
+                  <h3><span class="tabular">${esc(u.kode)}</span> - ${esc(u.nama)}</h3>
+                  <span class="status-pill status-${u.is_active ? 'success' : 'danger'}">${u.is_active ? 'Aktif' : 'Nonaktif'}</span>
+                </div>
+                <dl>
+                  <div><dt>Folder Drive</dt><dd class="tabular">[${esc(u.kode)} - ${esc(u.nama)}]</dd></div>
+                  <div><dt>Dokumen</dt><dd class="tabular">${docCount} · Koord. ${koCount}</dd></div>
+                  <div><dt>Manajer</dt><dd>${esc(mgrNames.join(', ') || 'Belum disetel')}</dd></div>
+                </dl>
+                <div class="responsive-card-actions">
+                  <button type="button" class="btn btn-secondary btn-compact" data-unit-toggle="${u.id}">${u.is_active ? 'Nonaktifkan' : 'Aktifkan'}</button>
+                  <button type="button" class="row-menu-btn" data-unit-menu="${u.id}" aria-label="Aksi lainnya unit ${esc(u.nama)}" aria-haspopup="menu" aria-expanded="false">${iconSvg('dots')}</button>
+                </div>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      `;
+
+      resultsEl.querySelectorAll('[data-unit-toggle]').forEach((btn) => {
+        btn.onclick = () => {
+          const u = getUnit(btn.getAttribute('data-unit-toggle'));
+          if (live && u) return writeAction('admin/units/' + u.id, 'PATCH', { is_active: !u.is_active }, 'Status unit diperbarui.', renderRoute);
+          if (u) u.is_active = !u.is_active;
+          showToast(`Status unit ${u.nama} diperbarui.`, 'success');
+          renderUnitResults();
+        };
+      });
+
+      resultsEl.querySelectorAll('[data-unit-menu]').forEach((btn) => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const uid = btn.getAttribute('data-unit-menu');
+          const unit = getUnit(uid);
+          openRowMenu(btn, [
+            ...(live ? [{
+              label: 'Edit Unit',
+              onClick: async () => {
+                const res = await openDialog({
+                  title: 'Edit Unit',
+                  bodyHtml: `<div class="field-grid">
+                    <div class="field col-4"><label for="edit-unit-code">Kode Unit</label><input id="edit-unit-code" class="input" value="${esc(unit.kode)}"></div>
+                    <div class="field col-8"><label for="edit-unit-name">Nama Unit</label><input id="edit-unit-name" class="input" value="${esc(unit.nama)}"></div>
+                  </div>`,
+                  confirmLabel: 'Simpan Unit',
+                });
+                if (!res) return;
+                return writeAction('admin/units/' + uid, 'PATCH', {
+                  kode: document.getElementById('edit-unit-code').value, nama: document.getElementById('edit-unit-name').value,
+                }, 'Unit diperbarui.', renderRoute);
+              },
+            }] : []),
+            {
+              label: 'Hapus Unit',
+              icon: 'trash',
+              danger: true,
+              onClick: () => {
+                const hasDocs = state.documents.some((d) => d.unit_id === uid);
+                if (hasDocs) {
+                  showToast('Unit masih memiliki dokumen; hanya dapat dinonaktifkan.', 'error');
+                  return;
+                }
+                if (live) return writeAction('admin/units/' + uid, 'DELETE', undefined, 'Unit dihapus.', renderRoute);
+                state.units = state.units.filter((u) => u.id !== uid);
+                showToast('Unit tanpa dokumen dan folder Drive kosong dihapus.', 'success');
+                viewAdminUnit();
+              },
+            },
+          ]);
+        };
+      });
+    }
 
     document.getElementById('unit-search').oninput = (e) => {
       state.adminUnitSearch = e.target.value;
-      viewAdminUnit();
-      const inp = document.getElementById('unit-search');
-      inp.focus();
-      inp.setSelectionRange(inp.value.length, inp.value.length);
+      renderUnitResults();
     };
 
     document.getElementById('add-unit-btn').onclick = async () => {
@@ -3611,58 +3997,7 @@
       viewAdminUnit();
     };
 
-    main.querySelectorAll('[data-unit-toggle]').forEach((btn) => {
-      btn.onclick = () => {
-        const u = getUnit(btn.getAttribute('data-unit-toggle'));
-        if (live && u) return writeAction('admin/units/' + u.id, 'PATCH', { is_active: !u.is_active }, 'Status unit diperbarui.', renderRoute);
-        if (u) u.is_active = !u.is_active;
-        showToast(`Status unit ${u.nama} diperbarui.`, 'success');
-        viewAdminUnit();
-      };
-    });
-
-    main.querySelectorAll('[data-unit-menu]').forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        const uid = btn.getAttribute('data-unit-menu');
-        const unit = getUnit(uid);
-        openRowMenu(btn, [
-          ...(live ? [{
-            label: 'Edit Unit',
-            onClick: async () => {
-              const res = await openDialog({
-                title: 'Edit Unit',
-                bodyHtml: `<div class="field-grid">
-                  <div class="field col-4"><label for="edit-unit-code">Kode Unit</label><input id="edit-unit-code" class="input" value="${esc(unit.kode)}"></div>
-                  <div class="field col-8"><label for="edit-unit-name">Nama Unit</label><input id="edit-unit-name" class="input" value="${esc(unit.nama)}"></div>
-                </div>`,
-                confirmLabel: 'Simpan Unit',
-              });
-              if (!res) return;
-              return writeAction('admin/units/' + uid, 'PATCH', {
-                kode: document.getElementById('edit-unit-code').value, nama: document.getElementById('edit-unit-name').value,
-              }, 'Unit diperbarui.', renderRoute);
-            },
-          }] : []),
-          {
-            label: 'Hapus Unit',
-            icon: 'trash',
-            danger: true,
-            onClick: () => {
-              const hasDocs = state.documents.some((d) => d.unit_id === uid);
-              if (hasDocs) {
-                showToast('Unit masih memiliki dokumen; hanya dapat dinonaktifkan.', 'error');
-                return;
-              }
-              if (live) return writeAction('admin/units/' + uid, 'DELETE', undefined, 'Unit dihapus.', renderRoute);
-              state.units = state.units.filter((u) => u.id !== uid);
-              showToast('Unit tanpa dokumen dan folder Drive kosong dihapus.', 'success');
-              viewAdminUnit();
-            },
-          },
-        ]);
-      };
-    });
+    renderUnitResults();
   }
 
   function parseCsvRow(line, delimiter) {
@@ -3787,11 +4122,6 @@
   function viewAdminPengguna() {
     if (!requireSuperAdmin()) return;
     const main = document.getElementById('main-content');
-    const q = state.adminUserSearch.trim().toLowerCase();
-    const filtered = state.users.filter((u) => !q || `${u.nama} ${u.nik}`.toLowerCase().includes(q));
-    const totalPages = Math.max(1, Math.ceil(filtered.length / state.adminUserPageSize));
-    if (state.adminUserPage > totalPages) state.adminUserPage = totalPages;
-    const rows = filtered.slice((state.adminUserPage - 1) * state.adminUserPageSize, state.adminUserPage * state.adminUserPageSize);
 
     main.innerHTML = `
       <div class="page-header">
@@ -3807,43 +4137,89 @@
 
       <section class="surface-panel">
         <div class="filter-subrow">
-          <div class="field" style="min-width:280px;">
+          <div class="field admin-search-field">
             <label for="user-search">Cari nama atau NIK</label>
-            <input id="user-search" class="input" value="${esc(state.adminUserSearch)}" placeholder="Contoh: 1221.21.23 atau Budi">
+            <input id="user-search" class="input" type="search" value="${esc(state.adminUserSearch)}" placeholder="Contoh: 1221.21.23 atau Budi">
           </div>
-          <span class="tabular" style="font-size:var(--text-sm);color:var(--text-secondary);">Total ${filtered.length} pengguna</span>
+          <span id="admin-user-count" class="tabular meta-label-sm"></span>
         </div>
 
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>NIK</th>
-                <th>Nama Lengkap</th>
-                <th>Peran Aktif</th>
-                <th>Status</th>
-                <th class="col-actions">Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows
-                .map((u) => `
-                  <tr>
-                    <td class="tabular"><strong>${esc(u.nik)}</strong></td>
-                    <td>${esc(u.nama)}</td>
-                    <td>${esc(getRolesSummary(u).join(' · '))}</td>
-                    <td><span class="status-pill status-${u.is_active ? 'success' : 'danger'}">${u.is_active ? 'Aktif' : 'Nonaktif'}</span></td>
-                    <td class="col-actions">
-                      <div class="table-actions">
-                        <button type="button" class="btn btn-secondary btn-compact" data-user-reset="${u.id}">Reset Password</button>
-                        <button type="button" class="row-menu-btn" data-user-menu="${u.id}" aria-label="Aksi lainnya untuk ${esc(u.nama)}" aria-haspopup="menu" aria-expanded="false">${iconSvg('dots')}</button>
-                      </div>
-                    </td>
-                  </tr>
-                `)
-                .join('')}
-            </tbody>
-          </table>
+        <div id="admin-user-results"></div>
+      </section>
+    `;
+
+    function renderUserResults() {
+      const q = state.adminUserSearch.trim().toLowerCase();
+      const filtered = state.users.filter((u) => !q || `${u.nama} ${u.nik}`.toLowerCase().includes(q));
+      const totalPages = Math.max(1, Math.ceil(filtered.length / state.adminUserPageSize));
+      if (state.adminUserPage > totalPages) state.adminUserPage = totalPages;
+      const rows = filtered.slice((state.adminUserPage - 1) * state.adminUserPageSize, state.adminUserPage * state.adminUserPageSize);
+
+      const countEl = document.getElementById('admin-user-count');
+      if (countEl) countEl.textContent = `Total ${filtered.length} pengguna`;
+      const resultsEl = document.getElementById('admin-user-results');
+      if (!resultsEl) return;
+
+      resultsEl.innerHTML = rows.length === 0 ? `
+        <div class="empty-state">
+          ${iconSvg('users')}
+          <h3>Pengguna tidak ditemukan</h3>
+          <p>Ubah kata kunci pencarian nama atau NIK.</p>
+        </div>
+      ` : `
+        <div class="responsive-table-region">
+          <div class="table-wrap responsive-table">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>NIK</th>
+                  <th>Nama Lengkap</th>
+                  <th>Peran Aktif</th>
+                  <th>Status</th>
+                  <th class="col-actions">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows
+                  .map((u) => `
+                    <tr>
+                      <td class="tabular"><strong>${esc(u.nik)}</strong></td>
+                      <td>${esc(u.nama)}</td>
+                      <td>${esc(getRolesSummary(u).join(' · '))}</td>
+                      <td><span class="status-pill status-${u.is_active ? 'success' : 'danger'}">${u.is_active ? 'Aktif' : 'Nonaktif'}</span></td>
+                      <td class="col-actions">
+                        <div class="table-actions">
+                          <button type="button" class="btn btn-secondary btn-compact" data-user-reset="${u.id}">Reset Password</button>
+                          <button type="button" class="row-menu-btn" data-user-menu="${u.id}" aria-label="Aksi lainnya untuk ${esc(u.nama)}" aria-haspopup="menu" aria-expanded="false">${iconSvg('dots')}</button>
+                        </div>
+                      </td>
+                    </tr>
+                  `)
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <ul class="responsive-cards" role="list">
+            ${rows
+              .map((u) => `
+                <li class="responsive-card">
+                  <div class="responsive-card-head">
+                    <h3>${esc(u.nama)}</h3>
+                    <span class="status-pill status-${u.is_active ? 'success' : 'danger'}">${u.is_active ? 'Aktif' : 'Nonaktif'}</span>
+                  </div>
+                  <dl>
+                    <div><dt>NIK</dt><dd class="tabular"><strong>${esc(u.nik)}</strong></dd></div>
+                    <div><dt>Peran</dt><dd>${esc(getRolesSummary(u).join(' · '))}</dd></div>
+                  </dl>
+                  <div class="responsive-card-actions">
+                    <button type="button" class="btn btn-secondary btn-compact" data-user-reset="${u.id}">Reset Password</button>
+                    <button type="button" class="row-menu-btn" data-user-menu="${u.id}" aria-label="Aksi lainnya untuk ${esc(u.nama)}" aria-haspopup="menu" aria-expanded="false">${iconSvg('dots')}</button>
+                  </div>
+                </li>
+              `)
+              .join('')}
+          </ul>
         </div>
 
         <div class="pagination-bar">
@@ -3859,37 +4235,93 @@
             <button type="button" class="btn btn-secondary btn-compact" id="user-next-page" ${state.adminUserPage >= totalPages ? 'disabled' : ''}>Berikutnya</button>
           </div>
         </div>
-      </section>
+      `;
 
-    `;
+      enhanceSelects(resultsEl);
 
-    enhanceSelects(main);
+      const ps = document.getElementById('user-pagesize');
+      if (ps) ps.onchange = (e) => {
+        state.adminUserPageSize = Number(e.target.value) || 10;
+        state.adminUserPage = 1;
+        renderUserResults();
+      };
+      const prev = document.getElementById('user-prev-page');
+      if (prev) prev.onclick = () => {
+        if (state.adminUserPage > 1) {
+          state.adminUserPage -= 1;
+          renderUserResults();
+        }
+      };
+      const next = document.getElementById('user-next-page');
+      if (next) next.onclick = () => {
+        if (state.adminUserPage < totalPages) {
+          state.adminUserPage += 1;
+          renderUserResults();
+        }
+      };
+
+      resultsEl.querySelectorAll('[data-user-reset]').forEach((btn) => {
+        btn.onclick = () => {
+          const u = getUser(btn.getAttribute('data-user-reset'));
+          if (live && u) return writeAction('admin/users/' + u.id + '/reset', 'POST', {}, 'Password direset.', showTemporaryPassword);
+          if (u) {
+            u.failed_login = 0;
+            u.locked_until = null;
+            u.must_change_password = true;
+          }
+          showToast(`Password ${u.nama} direset dan penguncian login dibuka.`, 'success');
+        };
+      });
+
+      resultsEl.querySelectorAll('[data-user-menu]').forEach((btn) => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const u = getUser(btn.getAttribute('data-user-menu'));
+          if (!u) return;
+          openRowMenu(btn, [
+            ...(live ? [{
+              label: 'Edit Pengguna',
+              onClick: async () => {
+                const res = await openDialog({
+                  title: 'Edit Pengguna',
+                  bodyHtml: `<div class="field-grid">
+                    <div class="field col-5"><label for="edit-user-nik">NIK</label><input id="edit-user-nik" class="input tabular" value="${esc(u.nik)}"></div>
+                    <div class="field col-7"><label for="edit-user-name">Nama</label><input id="edit-user-name" class="input" value="${esc(u.nama)}"></div>
+                    <div class="field col-12"><label for="edit-user-unit">Unit Utama</label><input id="edit-user-unit" class="input" value="${esc(u.unit_home)}"></div>
+                  </div>`,
+                  confirmLabel: 'Simpan Pengguna',
+                });
+                if (!res) return;
+                return writeAction('admin/users/' + u.id, 'PATCH', {
+                  nik: formatNikInput(document.getElementById('edit-user-nik').value),
+                  nama: document.getElementById('edit-user-name').value,
+                  unit_home: document.getElementById('edit-user-unit').value,
+                }, 'Pengguna diperbarui.', renderRoute);
+              },
+            }] : []),
+            {
+              label: u.is_active ? 'Nonaktifkan Akun' : 'Aktifkan Akun',
+              danger: u.is_active,
+              onClick: () => {
+                if (u.id === state.currentUserId) {
+                  showToast('Tidak dapat menonaktifkan akun Super Admin yang sedang aktif.', 'error');
+                  return;
+                }
+                if (live) return writeAction('admin/users/' + u.id, 'PATCH', { is_active: !u.is_active }, 'Status akun diperbarui.', renderRoute);
+                u.is_active = !u.is_active;
+                showToast(`Status akun ${u.nama} diubah.`, 'success');
+                renderUserResults();
+              },
+            },
+          ]);
+        };
+      });
+    }
 
     document.getElementById('user-search').oninput = (e) => {
       state.adminUserSearch = e.target.value;
       state.adminUserPage = 1;
-      viewAdminPengguna();
-      const inp = document.getElementById('user-search');
-      inp.focus();
-      inp.setSelectionRange(inp.value.length, inp.value.length);
-    };
-
-    document.getElementById('user-pagesize').onchange = (e) => {
-      state.adminUserPageSize = Number(e.target.value) || 10;
-      state.adminUserPage = 1;
-      viewAdminPengguna();
-    };
-    document.getElementById('user-prev-page').onclick = () => {
-      if (state.adminUserPage > 1) {
-        state.adminUserPage -= 1;
-        viewAdminPengguna();
-      }
-    };
-    document.getElementById('user-next-page').onclick = () => {
-      if (state.adminUserPage < totalPages) {
-        state.adminUserPage += 1;
-        viewAdminPengguna();
-      }
+      renderUserResults();
     };
 
     async function openAddUserModal(initialTab = 'SINGLE') {
@@ -3900,11 +4332,11 @@
         wide: true,
         bodyHtml: `
           <div class="tablist" role="tablist" aria-label="Mode tambah pengguna" style="margin-bottom:14px;">
-            <button type="button" role="tab" data-add-tab="SINGLE" aria-selected="${initialTab === 'SINGLE'}">Tambah Satu</button>
-            <button type="button" role="tab" data-add-tab="IMPORT" aria-selected="${initialTab === 'IMPORT'}">Impor Massal (CSV / Excel)</button>
+            <button type="button" role="tab" id="nu-tab-single" data-add-tab="SINGLE" aria-controls="nu-panel-single" aria-selected="${initialTab === 'SINGLE'}">Tambah Satu</button>
+            <button type="button" role="tab" id="nu-tab-import" data-add-tab="IMPORT" aria-controls="nu-panel-import" aria-selected="${initialTab === 'IMPORT'}">Impor Massal (CSV / Excel)</button>
           </div>
 
-          <div id="nu-panel-single" ${initialTab === 'SINGLE' ? '' : 'hidden'}>
+          <div id="nu-panel-single" role="tabpanel" aria-labelledby="nu-tab-single" ${initialTab === 'SINGLE' ? '' : 'hidden'}>
             <div class="field-grid">
               <div class="field col-5"><label for="nu-nik">NIK (0000.00.00) <span class="req-mark">*</span></label><input id="nu-nik" class="input tabular" placeholder="1995.03.11"></div>
               <div class="field col-7"><label for="nu-nama">Nama Lengkap &amp; Gelar <span class="req-mark">*</span></label><input id="nu-nama" class="input" placeholder="Ns. Sari Indah, S.Kep"></div>
@@ -3941,7 +4373,7 @@
             </div>
           </div>
 
-          <div id="nu-panel-import" ${initialTab === 'IMPORT' ? '' : 'hidden'}>
+          <div id="nu-panel-import" role="tabpanel" aria-labelledby="nu-tab-import" ${initialTab === 'IMPORT' ? '' : 'hidden'}>
             <div class="field-grid">
               <div class="field col-12">
                 <label for="imp-default-pw">Template Password Awal (jika kolom password kosong)</label>
@@ -3961,7 +4393,7 @@
             </div>
           </div>
 
-          <p id="nu-form-error" class="field-error" style="margin-top:10px;" hidden></p>
+          <p id="nu-form-error" class="field-error" role="alert" style="margin-top:10px;" hidden></p>
         `,
         confirmLabel: initialTab === 'IMPORT' ? 'Impor Pengguna' : 'Simpan Pengguna',
         onOpen: (dialog) => {
@@ -4027,8 +4459,16 @@
             }
           }
 
-          tabs.forEach((t) => {
+          tabs.forEach((t, idx) => {
             t.onclick = () => switchTab(t.getAttribute('data-add-tab'));
+            t.onkeydown = (e) => {
+              if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                e.preventDefault();
+                const nextTab = tabs[(idx + 1) % tabs.length];
+                switchTab(nextTab.getAttribute('data-add-tab'));
+                nextTab.focus();
+              }
+            };
           });
 
           nikEl.oninput = (e) => {
@@ -4175,63 +4615,7 @@
 
     document.getElementById('add-user-btn').onclick = () => openAddUserModal('SINGLE');
     document.getElementById('import-user-btn').onclick = () => openAddUserModal('IMPORT');
-
-    main.querySelectorAll('[data-user-reset]').forEach((btn) => {
-      btn.onclick = () => {
-        const u = getUser(btn.getAttribute('data-user-reset'));
-        if (live && u) return writeAction('admin/users/' + u.id + '/reset', 'POST', {}, 'Password direset.', showTemporaryPassword);
-        if (u) {
-          u.failed_login = 0;
-          u.locked_until = null;
-          u.must_change_password = true;
-        }
-        showToast(`Password ${u.nama} direset dan penguncian login dibuka.`, 'success');
-      };
-    });
-
-    main.querySelectorAll('[data-user-menu]').forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        const u = getUser(btn.getAttribute('data-user-menu'));
-        if (!u) return;
-        openRowMenu(btn, [
-          ...(live ? [{
-            label: 'Edit Pengguna',
-            onClick: async () => {
-              const res = await openDialog({
-                title: 'Edit Pengguna',
-                bodyHtml: `<div class="field-grid">
-                  <div class="field col-5"><label for="edit-user-nik">NIK</label><input id="edit-user-nik" class="input tabular" value="${esc(u.nik)}"></div>
-                  <div class="field col-7"><label for="edit-user-name">Nama</label><input id="edit-user-name" class="input" value="${esc(u.nama)}"></div>
-                  <div class="field col-12"><label for="edit-user-unit">Unit Utama</label><input id="edit-user-unit" class="input" value="${esc(u.unit_home)}"></div>
-                </div>`,
-                confirmLabel: 'Simpan Pengguna',
-              });
-              if (!res) return;
-              return writeAction('admin/users/' + u.id, 'PATCH', {
-                nik: formatNikInput(document.getElementById('edit-user-nik').value),
-                nama: document.getElementById('edit-user-name').value,
-                unit_home: document.getElementById('edit-user-unit').value,
-              }, 'Pengguna diperbarui.', renderRoute);
-            },
-          }] : []),
-          {
-            label: u.is_active ? 'Nonaktifkan Akun' : 'Aktifkan Akun',
-            danger: u.is_active,
-            onClick: () => {
-              if (u.id === state.currentUserId) {
-                showToast('Tidak dapat menonaktifkan akun Super Admin yang sedang aktif.', 'error');
-                return;
-              }
-              if (live) return writeAction('admin/users/' + u.id, 'PATCH', { is_active: !u.is_active }, 'Status akun diperbarui.', renderRoute);
-              u.is_active = !u.is_active;
-              showToast(`Status akun ${u.nama} diubah.`, 'success');
-              viewAdminPengguna();
-            },
-          },
-        ]);
-      };
-    });
+    renderUserResults();
   }
 
   function viewAdminPenugasan(peran) {
@@ -4285,33 +4669,52 @@
 
       <section class="surface-panel">
         <h2 class="section-heading">Daftar Penugasan Aktif (${grouped.length} ${isKoor ? 'Koordinator/SPV' : 'Manajer'} · ${assignments.length} Unit)</h2>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Pengguna</th>
-                <th>NIK</th>
-                <th>Unit Penugasan</th>
-                <th class="col-actions">Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${grouped
-                .map((g) => `
-                  <tr>
-                    <td>${esc(g.user?.nama || '-')}</td>
-                    <td class="tabular">${esc(g.user?.nik || '-')}</td>
-                    <td>${esc(g.entries.map((e) => e.unitName).join(', '))}</td>
-                    <td class="col-actions">
-                      <div class="table-actions">
-                        <button type="button" class="row-menu-btn" data-assign-menu="${g.userId}" aria-label="Kelola penugasan ${esc(g.user?.nama || 'pengguna')}" aria-haspopup="menu" aria-expanded="false">${iconSvg('dots')}</button>
-                      </div>
-                    </td>
-                  </tr>
-                `)
-                .join('')}
-            </tbody>
-          </table>
+        <div class="responsive-table-region">
+          <div class="table-wrap responsive-table">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Pengguna</th>
+                  <th>NIK</th>
+                  <th>Unit Penugasan</th>
+                  <th class="col-actions">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${grouped
+                  .map((g) => `
+                    <tr>
+                      <td>${esc(g.user?.nama || '-')}</td>
+                      <td class="tabular">${esc(g.user?.nik || '-')}</td>
+                      <td>${esc(g.entries.map((e) => e.unitName).join(', '))}</td>
+                      <td class="col-actions">
+                        <div class="table-actions">
+                          <button type="button" class="row-menu-btn" data-assign-menu="${g.userId}" aria-label="Kelola penugasan ${esc(g.user?.nama || 'pengguna')}" aria-haspopup="menu" aria-expanded="false">${iconSvg('dots')}</button>
+                        </div>
+                      </td>
+                    </tr>
+                  `)
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <ul class="responsive-cards" role="list">
+            ${grouped
+              .map((g) => `
+                <li class="responsive-card">
+                  <div class="responsive-card-head">
+                    <h3>${esc(g.user?.nama || '-')}</h3>
+                    <button type="button" class="row-menu-btn" data-assign-menu="${g.userId}" aria-label="Kelola penugasan ${esc(g.user?.nama || 'pengguna')}" aria-haspopup="menu" aria-expanded="false">${iconSvg('dots')}</button>
+                  </div>
+                  <dl>
+                    <div><dt>NIK</dt><dd class="tabular">${esc(g.user?.nik || '-')}</dd></div>
+                    <div><dt>Unit</dt><dd>${esc(g.entries.map((e) => e.unitName).join(', '))}</dd></div>
+                  </dl>
+                </li>
+              `)
+              .join('')}
+          </ul>
         </div>
       </section>
     `;
@@ -4388,31 +4791,58 @@
       </div>
 
       <section class="surface-panel">
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Kode</th>
-                <th>Label Jenis</th>
-                <th>Contoh Nomor (Panduan Formulir)</th>
-                <th>Versi Template</th>
-                <th>Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${state.categories
-                .map((c) => `
-                  <tr>
-                    <td class="tabular"><strong>${esc(c.kode)}</strong></td>
-                    <td>${esc(c.label)}</td>
-                    <td><input class="input tabular" data-cat-ex="${c.id}" value="${esc(c.contoh_nomor)}" aria-label="Contoh nomor ${esc(c.label)}"></td>
-                    <td style="width:120px;"><input class="input tabular" type="number" min="1" data-cat-ver="${c.id}" value="${c.template_version}" aria-label="Versi template ${esc(c.label)}"></td>
-                    <td><button type="button" class="btn btn-primary btn-compact" data-cat-save="${c.id}">Simpan</button></td>
-                  </tr>
-                `)
-                .join('')}
-            </tbody>
-          </table>
+        <div class="responsive-table-region">
+          <div class="table-wrap responsive-table">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Kode</th>
+                  <th>Label Jenis</th>
+                  <th>Contoh Nomor (Panduan Formulir)</th>
+                  <th>Versi Template</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${state.categories
+                  .map((c) => `
+                    <tr>
+                      <td class="tabular"><strong>${esc(c.kode)}</strong></td>
+                      <td>${esc(c.label)}</td>
+                      <td><input class="input tabular" data-cat-ex="${c.id}" value="${esc(c.contoh_nomor)}" aria-label="Contoh nomor ${esc(c.label)}"></td>
+                      <td style="width:120px;"><input class="input tabular" type="number" min="1" data-cat-ver="${c.id}" value="${c.template_version}" aria-label="Versi template ${esc(c.label)}"></td>
+                      <td><button type="button" class="btn btn-primary btn-compact" data-cat-save="${c.id}">Simpan</button></td>
+                    </tr>
+                  `)
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <ul class="responsive-cards" role="list">
+            ${state.categories
+              .map((c) => `
+                <li class="responsive-card">
+                  <div class="responsive-card-head">
+                    <h3><span class="tabular">${esc(c.kode)}</span> - ${esc(c.label)}</h3>
+                  </div>
+                  <div class="responsive-card-fields">
+                    <div class="field">
+                      <label for="card-cat-ex-${c.id}">Contoh Nomor (Panduan Formulir)</label>
+                      <input id="card-cat-ex-${c.id}" class="input tabular" data-cat-ex="${c.id}" value="${esc(c.contoh_nomor)}">
+                    </div>
+                    <div class="field">
+                      <label for="card-cat-ver-${c.id}">Versi Template</label>
+                      <input id="card-cat-ver-${c.id}" class="input tabular" type="number" min="1" data-cat-ver="${c.id}" value="${c.template_version}">
+                    </div>
+                  </div>
+                  <div class="responsive-card-actions">
+                    <button type="button" class="btn btn-primary btn-compact" data-cat-save="${c.id}">Simpan</button>
+                  </div>
+                </li>
+              `)
+              .join('')}
+          </ul>
         </div>
       </section>
     `;
@@ -4421,12 +4851,15 @@
       btn.onclick = () => {
         const cid = btn.getAttribute('data-cat-save');
         const c = getCategory(cid);
-        const ex = main.querySelector(`[data-cat-ex="${cid}"]`).value.trim();
-        const ver = Number(main.querySelector(`[data-cat-ver="${cid}"]`).value) || 1;
+        const scope = btn.closest('tr, .responsive-card') || main;
+        const ex = scope.querySelector(`[data-cat-ex="${cid}"]`).value.trim();
+        const ver = Number(scope.querySelector(`[data-cat-ver="${cid}"]`).value) || 1;
         if (!ex) {
           showToast('Contoh nomor wajib diisi.', 'error');
           return;
         }
+        main.querySelectorAll(`[data-cat-ex="${cid}"]`).forEach((inp) => { inp.value = ex; });
+        main.querySelectorAll(`[data-cat-ver="${cid}"]`).forEach((inp) => { inp.value = String(ver); });
         if (live) return writeAction('admin/categories/' + cid, 'PATCH', { contoh_nomor: ex, template_version: ver },
           'Pengaturan jenis dokumen disimpan.', renderRoute);
         c.contoh_nomor = ex;
@@ -4464,8 +4897,8 @@
           <div class="field-grid">
             <div class="field col-12"><label for="gp-pass1">Password baru (huruf dan angka)</label><input id="gp-pass1" type="password" class="input" placeholder="Minimal 8 karakter"></div>
             <div class="field col-12"><label for="gp-pass2">Ulangi password baru</label><input id="gp-pass2" type="password" class="input" placeholder="Ketik ulang password"></div>
-            <div class="col-12"><p id="gp-err" class="field-error" hidden></p></div>
-            <div class="col-12"><button type="button" class="btn btn-primary" style="width:100%;" id="gp-submit-btn">Simpan Password & Masuk</button></div>
+            <div class="col-12"><p id="gp-err" class="field-error" role="alert" hidden></p></div>
+            <div class="col-12"><button type="button" class="btn btn-primary btn-full" id="gp-submit-btn">Simpan Password & Masuk</button></div>
           </div>
         </section>
       `;
@@ -4522,7 +4955,7 @@
             <div class="auth-header">
               <div class="auth-crest"><img src="assets/logo-rs-annisa.png" alt="Logo RS An-Nisa Tangerang" width="42" height="56" class="auth-logo" decoding="async"></div>
               <div>
-                <h2 class="page-title">Masuk JDIH RS AN-NISA</h2>
+                <h1 class="page-title">Masuk JDIH RS AN-NISA</h1>
                 <p class="page-subtitle">Gunakan NIK pegawai format 0000.00.00 dan password akun Anda.</p>
               </div>
             </div>
@@ -4547,15 +4980,15 @@
                   </div>
                 </div>
                 <div class="col-12">
-                  <p id="login-error" class="field-error" hidden></p>
+                  <p id="login-error" class="field-error" role="alert" hidden></p>
                 </div>
                 <div class="col-12">
-                  <button type="submit" class="btn btn-primary" style="width:100%;">Masuk ke Sistem</button>
+                  <button type="submit" class="btn btn-primary btn-full">Masuk ke Sistem</button>
                 </div>
               </div>
             </form>
 
-            ${live ? '' : `<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border-subtle);">
+            ${live ? '' : `<div class="panel-divider">
               <div style="font-size:var(--text-sm);font-weight:600;color:var(--text-secondary);">Akses Cepat Simulasi Peran</div>
               <div class="demo-login-grid">
                 <button type="button" class="btn btn-secondary btn-compact" data-demo-login="usr-staf">Staf (1989.04.12)</button>
@@ -4566,8 +4999,8 @@
             </div>`}
           </div>
 
-          <div style="font-size:var(--text-sm);color:var(--text-secondary);text-align:center;">
-            RS AN-NISA Tangerang · Repositori Regulasi Internal (Fase 1)
+          <div class="meta-label-sm" style="text-align:center;">
+            RS AN-NISA Tangerang · Repositori Regulasi Internal
           </div>
         </div>
 
@@ -4583,7 +5016,7 @@
           </div>
 
           <div class="login-hero-copy">
-            <h1 class="login-hero-title">Dari meja unit ke seluruh rumah sakit.</h1>
+            <h2 class="login-hero-title">Dari meja unit ke seluruh rumah sakit.</h2>
             <p class="login-hero-sub">Ikuti perjalanan satu SPO, dari draf unit hingga dapat ditemukan oleh staf RS AN-NISA.</p>
           </div>
 
@@ -4856,6 +5289,8 @@
   }
 
   function renderRoute() {
+    clearTimeout(livePreviewTimer);
+    livePreviewTimer = null;
     reviewSelectionEvents?.abort();
     reviewSelectionEvents = null;
     const route = parseRoute();
@@ -4913,8 +5348,13 @@
     document.getElementById('theme-toggle-btn').onclick = toggleThemeWithMotion;
 
     document.getElementById('menu-toggle-btn').onclick = openMobileSidebar;
-    document.getElementById('sidebar-close-btn').onclick = closeMobileSidebar;
-    document.getElementById('sidebar-backdrop').onclick = closeMobileSidebar;
+    document.getElementById('sidebar-close-btn').onclick = () => closeMobileSidebar(true);
+    document.getElementById('sidebar-backdrop').onclick = () => closeMobileSidebar(true);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.getElementById('sidebar').classList.contains('open')) {
+        closeMobileSidebar(true);
+      }
+    });
 
     const demoRole = document.getElementById('demo-role-select');
     if (demoRole) demoRole.onchange = (e) => {

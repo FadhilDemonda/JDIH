@@ -1,6 +1,15 @@
 # JDIH RS AN-NISA
 
-Aplikasi internal berbasis Next.js yang memakai tampilan mockup. Alurnya mencakup login NIK, pengelolaan akun dan penugasan unit, editor lima template, unggah PDF, verifikasi, publikasi, riwayat revisi, dan notifikasi web.
+Aplikasi internal berbasis Next.js App Router + React. Alurnya mencakup login NIK, pengelolaan akun dan penugasan unit, editor lima template, unggah PDF, verifikasi, publikasi, riwayat revisi, dan notifikasi web.
+
+## Struktur Proyek
+
+- `app/` — Next.js App Router: halaman autentikasi `(auth)`, halaman aplikasi `(app)`, serta backend API `api/[...parts]/route.js`.
+- `components/` — Komponen React modular (`providers/`, `layout/`, `ui/`, `preview/`, `views/`).
+- `lib/` — Utilitas murni (`api.js`, `domain.js`, `format.js`).
+- `server/` — Logika backend, penyimpanan lokal/Google Workspace, dan generator PDF `@react-pdf/renderer`.
+- `public/assets/` — Aset logo statis untuk aplikasi Next.js.
+- `mockup/` — Stylesheet bersama (`styles.css`), data seed awal (`data.js`), aset sumber PDF, serta demo statis (`node scripts/serve.mjs`).
 
 ## Jalankan demo lokal
 
