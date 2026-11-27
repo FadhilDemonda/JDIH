@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { parseUserImportText } from '../lib/format.js';
 
 const http = process.env.JDIH_TEST_URL;
 const root = http ? null : await mkdtemp(path.join(os.tmpdir(), 'jdih-test-'));
@@ -224,6 +225,56 @@ async function run() {
     body: { kode: 'UJI' + suffix.slice(0, 4).toUpperCase(), nama: 'Unit Uji ' + suffix },
   });
   assert.match(freshUnitId, /^u-\d{2,}$/);
+
+  const importCode = 'IMP' + suffix.toUpperCase();
+  const importName = 'Unit Impor, ' + suffix;
+  const unitImport = {
+    csv: [
+      '\uFEFFKODE;UNIT',
+      `uji${suffix.slice(0, 4)};Nama berbeda`,
+      `LAIN${suffix};unit uji ${suffix.toUpperCase()}`,
+      `${importCode};"${importName}"`,
+      `${importCode.toLowerCase()};Nama duplikat dalam CSV`,
+      `DUP${suffix};${importName.toUpperCase()}`,
+      `KOSONG${suffix};`,
+    ].join('\r\n'),
+  };
+  await send('admin/units/import', { method: 'POST', cookie: staff, body: unitImport, status: 403 });
+  await send('admin/units/import', { method: 'POST', cookie: admin, body: { csv: 'Kode,Alamat\nA,Alamat' }, status: 422 });
+  const { body: unitResult } = await send('admin/units/import', { method: 'POST', cookie: admin, body: unitImport });
+  assert.equal(unitResult.imported, 1);
+  assert.deepEqual(unitResult.skipped.map(({ row }) => row), [2, 3, 5, 6, 7]);
+  assert.match(unitResult.skipped[0].reason, /^Kode/);
+  assert.match(unitResult.skipped[1].reason, /^Nama/);
+  const { body: { items: importedUnits } } = await send('admin/units', { cookie: admin });
+  assert.equal(importedUnits.find(({ id }) => id === freshUnitId).nama, 'Unit Uji ' + suffix);
+  const importedUnit = importedUnits.find(({ kode }) => kode === importCode);
+  assert.equal(importedUnit.nama, importName);
+  assert.equal(importedUnit.is_active, true);
+  await send(`admin/units/${importedUnit.id}`, { method: 'PATCH', cookie: admin, body: { is_active: false } });
+  const { body: repeatedImport } = await send('admin/units/import', { method: 'POST', cookie: admin, body: unitImport });
+  assert.equal(repeatedImport.imported, 0);
+  assert.equal(repeatedImport.skipped.length, 6);
+
+  const bulkUnits = Array.from({ length: 35 }, (_, i) => `B${suffix}${i},Unit Bulk ${suffix} ${i}`);
+  const bulkCsv = ['KODE,UNIT', ...bulkUnits, bulkUnits[0]].join('\n');
+  let unitCursor = 0;
+  let bulkImported = 0;
+  const bulkSkipped = [];
+  do {
+    const { body: batch } = await send('admin/units/import', {
+      method: 'POST', cookie: admin, body: { cursor: unitCursor, csv: bulkCsv },
+    });
+    assert.equal(batch.total, bulkUnits.length + 1);
+    if (batch.nextCursor !== null) assert(batch.nextCursor > unitCursor);
+    if (unitCursor === 0) assert.notEqual(batch.nextCursor, null);
+    bulkImported += batch.imported;
+    bulkSkipped.push(...batch.skipped);
+    unitCursor = batch.nextCursor;
+  } while (unitCursor !== null);
+  assert.equal(bulkImported, bulkUnits.length);
+  assert.deepEqual(bulkSkipped.map(({ row }) => row), [37]);
+
   const { body: { documentId: adminDocId, versionId: adminVerId } } = await send('documents', {
     method: 'POST', cookie: admin,
     body: { unit_id: freshUnitId, category_id: 'cat-spo', metode: 'TEMPLATE' },
@@ -324,6 +375,16 @@ async function run() {
 
   assert.equal(googleStore.documentFolderName(sampleState.documents[0], sampleState.versions[0], sampleState.categories[0]), 'RSAN - SPO - IGD - 001 - SPO Triase');
   assert.equal(googleStore.versionFolderName(sampleState.versions[0]), 'Rev 00');
+
+  // Legacy category rows missing is_active, allow_template, layout_type should decode safely
+  const legacyCatEncoded = structuredClone(encoded);
+  delete legacyCatEncoded.Categories[0].is_active;
+  delete legacyCatEncoded.Categories[0].allow_template;
+  delete legacyCatEncoded.Categories[0].layout_type;
+  const decodedLegacyCat = googleStore.decodeCloudTables(legacyCatEncoded);
+  assert.equal(decodedLegacyCat.categories[0].is_active, true);
+  assert.equal(decodedLegacyCat.categories[0].allow_template, true);
+  assert.equal(decodedLegacyCat.categories[0].layout_type, 'SPO');
   console.log('Lulus format Google Sheets terbaca manusia, tanpa hash selain password, dan nama folder Drive.');
 
   // Verifikasi default password annisa123 dan impor pengguna massal
@@ -359,7 +420,254 @@ async function run() {
   });
   await send('documents', { cookie: impInit1, status: 403 });
   await send('auth/login', { method: 'POST', body: { nik: impNik2, password: 'CustomPass9' } });
-  console.log('Lulus impor pengguna massal dan template password annisa123.');
+
+  // Verifikasi impor Excel/CSV dengan UNIT dan JABATAN DI UNIT -> role & penugasan unit otomatis
+  const { body: stateBefore } = await send('state', { cookie: admin });
+  const roleNik1 = randNik();
+  const roleNik2 = randNik();
+  const roleNik3 = randNik();
+  const roleNik4 = randNik();
+  const roleNik5 = randNik();
+  const excelPaste = [
+    'NIK\tNAMA\tUNIT\tJABATAN DI UNIT',
+    `${roleNik1}\tNoviyanti ${suffix}\tAKUNTANSI\tKoordinator Unit`,
+    `${roleNik2}\tDoni ${suffix}\tFarmasi\tManajer`,
+    `${roleNik3}\tSari ${suffix}\tIGD\tPerawat Pelaksana`,
+    `${roleNik4}\tSkip Koordinator ${suffix}\tUnit Tidak Ada\tKoordinator Unit`,
+    `${roleNik5}\tSkip Staf ${suffix}\tUnit Tidak Ada\tPerawat Pelaksana`,
+  ].join('\n');
+  const parsedExcel = parseUserImportText(excelPaste, 'annisa123', stateBefore.users, stateBefore.units);
+  assert.equal(parsedExcel.length, 5);
+  assert.equal(parsedExcel[0].peran, 'KOORDINATOR');
+  assert.deepEqual(parsedExcel[0].unit_ids, ['u-03']);
+  assert.equal(parsedExcel[0].unit_home, 'Akuntansi & Keuangan');
+  assert.equal(parsedExcel[1].peran, 'MANAJER');
+  assert.deepEqual(parsedExcel[1].unit_ids, ['u-17']);
+  assert.equal(parsedExcel[2].peran, 'STAF');
+  assert.equal(parsedExcel[2].unit_home, 'IGD');
+  assert.equal(parsedExcel[3].valid, false);
+  assert.equal(parsedExcel[3].reason, 'Unit tidak ditemukan di daftar unit aktif');
+  assert.equal(parsedExcel[4].valid, false);
+  assert.equal(parsedExcel[4].reason, 'Unit tidak ditemukan di daftar unit aktif');
+
+  const { body: roleImportRes } = await send('admin/users/import', {
+    method: 'POST',
+    cookie: admin,
+    body: {
+      users: parsedExcel.map(({ nik: n, nama: nm, unit, unit_home, unit_ids, has_unit_col, jabatan, peran: pRole, password: p }) => ({
+        nik: n, nama: nm, unit, unit_home, unit_ids, require_unit: Boolean(has_unit_col), jabatan, peran: pRole, password: p,
+      })),
+    },
+  });
+  assert.equal(roleImportRes.imported, 3);
+  assert.equal(roleImportRes.assigned, 2);
+  assert.equal(roleImportRes.skipped.length, 2);
+
+  const { body: stateAfter } = await send('state', { cookie: admin });
+  const u1 = stateAfter.users.find((u) => u.nik === roleNik1);
+  const u2 = stateAfter.users.find((u) => u.nik === roleNik2);
+  const u3 = stateAfter.users.find((u) => u.nik === roleNik3);
+  const u4 = stateAfter.users.find((u) => u.nik === roleNik4);
+  const u5 = stateAfter.users.find((u) => u.nik === roleNik5);
+  assert.equal(u1.unit_home, 'Akuntansi & Keuangan');
+  assert.ok(stateAfter.userUnits.some((a) => a.is_active && a.user_id === u1.id && a.unit_id === 'u-03' && a.peran === 'KOORDINATOR'));
+  assert.equal(u2.unit_home, 'Farmasi');
+  assert.ok(stateAfter.userUnits.some((a) => a.is_active && a.user_id === u2.id && a.unit_id === 'u-17' && a.peran === 'MANAJER'));
+  assert.equal(u3.unit_home, 'IGD');
+  assert.equal(stateAfter.userUnits.some((a) => a.is_active && a.user_id === u3.id), false);
+  assert.equal(u4, undefined);
+  assert.equal(u5, undefined);
+
+  // Verifikasi NIK duplikat diizinkan jika memegang 2+ unit berbeda (dalam batch & user terdaftar)
+  const multiNik = randNik();
+  const multiExcel = [
+    'NIK\tNAMA\tUNIT\tJABATAN DI UNIT',
+    `${multiNik}\tMulti Unit ${suffix}\tAKUNTANSI\tKoordinator Unit`,
+    `${multiNik}\tMulti Unit ${suffix}\tPEMASARAN\tKoordinator Unit`,
+    `${multiNik}\tMulti Unit ${suffix}\tAKUNTANSI\tKoordinator Unit`,
+  ].join('\n');
+  const parsedMulti = parseUserImportText(multiExcel, 'annisa123', stateAfter.users, stateAfter.units, stateAfter.userUnits);
+  assert.equal(parsedMulti.length, 3);
+  assert.equal(parsedMulti[0].valid, true);
+  assert.equal(parsedMulti[1].valid, true);
+  assert.equal(parsedMulti[1].reason, 'Tambah unit (NIK sama)');
+  assert.equal(parsedMulti[2].valid, false);
+  assert.equal(parsedMulti[2].reason, 'Penugasan unit sudah ada di daftar');
+
+  const { body: multiImportRes } = await send('admin/users/import', {
+    method: 'POST',
+    cookie: admin,
+    body: {
+      users: parsedMulti.map(({ nik: n, nama: nm, unit, unit_home, unit_ids, jabatan, peran: pRole, password: p }) => ({
+        nik: n, nama: nm, unit, unit_home, unit_ids, jabatan, peran: pRole, password: p,
+      })),
+    },
+  });
+  assert.equal(multiImportRes.imported, 1);
+  assert.equal(multiImportRes.assigned, 2);
+  assert.equal(multiImportRes.merged, 1);
+  assert.equal(multiImportRes.skipped.length, 1);
+
+  const { body: stateMid } = await send('state', { cookie: admin });
+  const multiUsers = stateMid.users.filter((u) => u.nik === multiNik);
+  assert.equal(multiUsers.length, 1);
+  const multiUser = multiUsers[0];
+  assert.equal(multiUser.unit_home, 'Akuntansi & Keuangan, Pemasaran');
+  assert.ok(stateMid.userUnits.some((a) => a.is_active && a.user_id === multiUser.id && a.unit_id === 'u-03' && a.peran === 'KOORDINATOR'));
+  assert.ok(stateMid.userUnits.some((a) => a.is_active && a.user_id === multiUser.id && a.unit_id === 'u-06' && a.peran === 'KOORDINATOR'));
+
+  // Impor ulang user terdaftar dengan unit ke-3 (Farmasi | Manajer)
+  const thirdExcel = `${multiNik}\tMulti Unit ${suffix}\tFarmasi\tManajer`;
+  const parsedThird = parseUserImportText(thirdExcel, 'annisa123', stateMid.users, stateMid.units, stateMid.userUnits);
+  assert.equal(parsedThird.length, 1);
+  assert.equal(parsedThird[0].valid, true);
+  assert.equal(parsedThird[0].reason, 'Tambah penugasan unit');
+
+  const { body: thirdImportRes } = await send('admin/users/import', {
+    method: 'POST',
+    cookie: admin,
+    body: {
+      users: parsedThird.map(({ nik: n, nama: nm, unit, unit_home, unit_ids, jabatan, peran: pRole, password: p }) => ({
+        nik: n, nama: nm, unit, unit_home, unit_ids, jabatan, peran: pRole, password: p,
+      })),
+    },
+  });
+  assert.equal(thirdImportRes.imported, 0);
+  assert.equal(thirdImportRes.assigned, 1);
+  assert.equal(thirdImportRes.merged, 1);
+
+  const { body: stateFinal } = await send('state', { cookie: admin });
+  const finalUser = stateFinal.users.find((u) => u.id === multiUser.id);
+  assert.equal(finalUser.unit_home, 'Akuntansi & Keuangan, Pemasaran, Farmasi');
+  const finalAssigns = stateFinal.userUnits.filter((a) => a.is_active && a.user_id === multiUser.id);
+  assert.equal(finalAssigns.length, 3);
+  assert.ok(finalAssigns.some((a) => a.unit_id === 'u-17' && a.peran === 'MANAJER'));
+
+  console.log('Lulus impor pengguna massal, mapping unit/jabatan, multi-unit NIK sama, dan template password annisa123.');
+
+  // Verifikasi CRUD Jenis Dokumen, Versi Template (Opsi A), dan Jenis Khusus Unggah PDF Tunggal
+  await send('admin/categories', {
+    method: 'POST', cookie: staff,
+    body: { kode: 'NOPE', label: 'Ditolak', contoh_nomor: 'X/1', sections: [{ label: 'Isi', type: 'textarea' }] },
+    status: 403,
+  });
+
+  const { body: { id: customCatId, category: customCat } } = await send('admin/categories', {
+    method: 'POST',
+    cookie: admin,
+    body: {
+      kode: 'PPK_' + suffix.slice(0, 4).toUpperCase(),
+      label: 'Panduan Praktik Klinis ' + suffix,
+      contoh_nomor: 'RSAN/PPK/6/IGD/001',
+      urutan: 6,
+      allow_template: true,
+      layout_type: 'STANDARD',
+      template_version: 1,
+      sections: [
+        { label: 'Pengertian Medis', type: 'textarea' },
+        { label: 'Anamnesis', type: 'list' },
+      ],
+    },
+  });
+  assert.match(customCatId, /^cat-\d{3,}$/);
+  assert.equal(customCat.template_version, 1);
+  assert.equal(customCat.sections[0].code, 'PENGERTIAN_MEDIS');
+  assert.equal(customCat.sections[1].code, 'ANAMNESIS');
+
+  const { body: { versionId: ppkVer1 } } = await send('documents', {
+    method: 'POST', cookie: coord,
+    body: { unit_id: 'u-21', category_id: customCatId, metode: 'TEMPLATE' },
+  });
+  await send('versions/' + ppkVer1, {
+    method: 'PATCH', cookie: coord,
+    body: {
+      judul: 'PPK Demam Berdarah ' + suffix,
+      nomor: 'PPK1/' + suffix,
+      tgl_dokumen: '2026-02-01',
+      tgl_berlaku: '2026-02-01',
+      edit_version: 1,
+      sections: { PENGERTIAN_MEDIS: 'Infeksi dengue.', ANAMNESIS: ['Demam mendadak', 'Nyeri otot'] },
+    },
+  });
+  await send('versions/' + ppkVer1 + '/submit', { method: 'POST', cookie: coord });
+  await send('versions/' + ppkVer1 + '/review', { method: 'POST', cookie: manager, body: { aksi: 'SETUJUI' } });
+  const ppkPdf = await send('versions/' + ppkVer1 + '/files/pdf', { cookie: staff, raw: true });
+  assert.equal(ppkPdf.toString('ascii', 0, 5), '%PDF-');
+
+  // Bump template version & update sections -> existing v1 snapshot stays untouched while new doc uses v2
+  await send('admin/categories/' + customCatId, {
+    method: 'PATCH',
+    cookie: admin,
+    body: {
+      template_version: 2,
+      sections: [
+        { code: 'PENGERTIAN_MEDIS', label: 'Pengertian Medis', type: 'textarea' },
+        { code: 'ANAMNESIS', label: 'Anamnesis', type: 'list' },
+        { label: 'Pemeriksaan Penunjang', type: 'textarea' },
+      ],
+    },
+  });
+  const { body: { versionId: ppkVer2 } } = await send('documents', {
+    method: 'POST', cookie: coord,
+    body: { unit_id: 'u-21', category_id: customCatId, metode: 'TEMPLATE' },
+  });
+  const ver1Snap = (await send('versions/' + ppkVer1, { cookie: staff })).body;
+  const ver2Snap = (await send('versions/' + ppkVer2, { cookie: coord })).body;
+  assert.equal(ver1Snap.template_version, 1);
+  assert.equal(ver1Snap.template_sections.length, 2);
+  assert.equal(ver2Snap.template_version, 2);
+  assert.equal(ver2Snap.template_sections.length, 3);
+  assert.equal(ver2Snap.template_sections[2].code, 'PEMERIKSAAN_PENUNJANG');
+
+  // Upload-only category (data lama / scan TTD basah)
+  const { body: { id: scanOnlyCatId, category: scanOnlyCat } } = await send('admin/categories', {
+    method: 'POST',
+    cookie: admin,
+    body: {
+      kode: 'ARSIP_' + suffix.slice(0, 4).toUpperCase(),
+      label: 'Arsip Scan TTD Basah ' + suffix,
+      contoh_nomor: 'RSAN/ARSIP/7/IGD/001',
+      allow_template: false,
+      sections: [],
+    },
+  });
+  assert.equal(scanOnlyCat.allow_template, false);
+  await send('documents', {
+    method: 'POST', cookie: coord,
+    body: { unit_id: 'u-21', category_id: scanOnlyCatId, metode: 'TEMPLATE' },
+    status: 422,
+  });
+  const { body: { versionId: scanOnlyVer } } = await send('documents', {
+    method: 'POST', cookie: coord,
+    body: { unit_id: 'u-21', category_id: scanOnlyCatId, metode: 'UPLOAD' },
+  });
+  assert.match(scanOnlyVer, /^ver-\d{3,}$/);
+
+  // Category with documents cannot be deleted (409), can be deactivated and blocks new document creation (422)
+  await send('admin/categories/' + customCatId, { method: 'DELETE', cookie: admin, status: 409 });
+  await send('admin/categories/' + customCatId, { method: 'PATCH', cookie: admin, body: { is_active: false } });
+  await send('documents', {
+    method: 'POST', cookie: coord,
+    body: { unit_id: 'u-21', category_id: customCatId, metode: 'TEMPLATE' },
+    status: 422,
+  });
+
+  // Unused category can be permanently deleted
+  const { body: { id: tempCatId } } = await send('admin/categories', {
+    method: 'POST',
+    cookie: admin,
+    body: {
+      kode: 'TMP_' + suffix.slice(0, 4).toUpperCase(),
+      label: 'Sementara ' + suffix,
+      contoh_nomor: 'RSAN/TMP/001',
+      allow_template: false,
+      sections: [],
+    },
+  });
+  await send('admin/categories/' + tempCatId, { method: 'DELETE', cookie: admin });
+  const { body: finalCats } = await send('admin/categories', { cookie: admin });
+  assert(!finalCats.items.some((c) => c.id === tempCatId));
+  console.log('Lulus CRUD jenis dokumen, versi template snapshot, mode unggah PDF tunggal, nonaktif, dan hapus.');
 }
 
 try {

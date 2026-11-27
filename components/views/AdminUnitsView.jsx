@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useJdih } from '@/components/providers/JdihProvider';
 import { Icon } from '@/components/ui/Icon';
@@ -9,7 +9,9 @@ import { getCurrentUser, getUser } from '@/lib/domain';
 
 export function AdminUnitsView() {
   const router = useRouter();
-  const { state, writeAction, showToast, openDialog, adminUnitSearch, setAdminUnitSearch } = useJdih();
+  const { state, saving, writeAction, showToast, openDialog, adminUnitSearch, setAdminUnitSearch } = useJdih();
+  const [importResult, setImportResult] = useState(null);
+  const [importProgress, setImportProgress] = useState(null);
 
   const user = getCurrentUser(state);
   const allowed = Boolean(user?.is_super_admin);
@@ -24,6 +26,70 @@ export function AdminUnitsView() {
   }, [state.units, adminUnitSearch]);
 
   if (!allowed) return null;
+
+  async function handleImportUnits() {
+    const selection = await openDialog({
+      title: 'Impor Unit dari CSV',
+      body: (
+        <div className="field">
+          <label htmlFor="unit-import-file">Berkas CSV</label>
+          <input
+            id="unit-import-file"
+            className="input"
+            type="file"
+            accept=".csv,text/csv"
+            aria-describedby="unit-import-help"
+            required
+          />
+          <p id="unit-import-help" className="field-help">
+            Gunakan kolom KODE dan UNIT. Jika kode atau nama unit sudah ada, baris itu dilewati.
+          </p>
+        </div>
+      ),
+      confirmLabel: 'Impor Unit',
+      onValidate: (dialog) => {
+        const input = dialog.querySelector('#unit-import-file');
+        return input.reportValidity() ? { file: input.files[0] } : null;
+      },
+    });
+    if (!selection) return;
+
+    let csv;
+    try {
+      csv = await selection.file.text();
+    } catch {
+      showToast('Berkas CSV gagal dibaca. Pilih berkas dan coba lagi.', 'error');
+      return;
+    }
+    setImportResult(null);
+    setImportProgress({ processed: 0, total: null });
+    const result = { imported: 0, skipped: [], error: '' };
+    let cursor = 0;
+    try {
+      do {
+        const batch = await writeAction('admin/units/import', 'POST', { cursor, csv }, '', undefined, {
+          timeoutMs: 60_000,
+          onError: (error) => {
+            result.error = error.name === 'TimeoutError'
+              ? 'Server terlalu lama merespons. Coba impor ulang berkas yang sama.'
+              : error.message;
+          },
+        });
+        if (!batch) {
+          result.error ||= 'Penyimpanan sedang sibuk. Coba impor ulang.';
+          break;
+        }
+        if (result.imported === 0 && batch.imported > 0) setAdminUnitSearch('');
+        result.imported += batch.imported;
+        result.skipped = result.skipped.concat(batch.skipped);
+        cursor = batch.nextCursor;
+        setImportProgress({ processed: cursor ?? batch.total, total: batch.total });
+      } while (Number.isInteger(cursor));
+      setImportResult(result);
+    } finally {
+      setImportProgress(null);
+    }
+  }
 
   async function handleAddUnit() {
     const res = await openDialog({
@@ -124,12 +190,50 @@ export function AdminUnitsView() {
           </p>
         </div>
         <div className="page-actions">
+          <button type="button" className="btn btn-secondary" disabled={saving || Boolean(importProgress)} onClick={handleImportUnits}>
+            <Icon name="upload" />
+            <span>{importProgress ? 'Mengimpor Unit…' : 'Impor Unit'}</span>
+          </button>
           <button type="button" className="btn btn-primary" onClick={handleAddUnit}>
             <Icon name="plus" />
             <span>Tambah Unit</span>
           </button>
         </div>
       </div>
+
+      {importProgress && (
+        <div className="notice-banner" role="status">
+          {importProgress.total
+            ? `${importProgress.processed} dari ${importProgress.total} baris diproses.`
+            : 'Membaca CSV dan menyimpan kelompok unit pertama…'}
+        </div>
+      )}
+
+      {importResult && (
+        <section className={`notice-banner${importResult.error || importResult.imported === 0 ? ' warning' : ''}`} aria-labelledby="unit-import-result">
+          <div>
+            <strong id="unit-import-result" role="status">
+              {importResult.imported} unit diimpor, {importResult.skipped.length} baris dilewati.
+            </strong>
+            {importResult.error && <p role="alert">{importResult.error}</p>}
+            {importResult.skipped.length > 0 && (
+              <details>
+                <summary>Lihat baris yang dilewati</summary>
+                <div className="import-preview-wrap">
+                  <table className="data-table">
+                    <thead><tr><th scope="col">Baris CSV</th><th scope="col">Alasan</th></tr></thead>
+                    <tbody>
+                      {importResult.skipped.map(({ row, reason }) => (
+                        <tr key={row}><td className="tabular">{row}</td><td>{reason}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
+          </div>
+        </section>
+      )}
 
       <section className="surface-panel">
         <div className="filter-subrow">

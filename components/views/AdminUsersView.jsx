@@ -14,7 +14,7 @@ import {
   parseUserImportText,
 } from '@/lib/format';
 
-function AddUserModal({ open, initialTab, onClose, units, users, saving, writeAction, showToast, onTempPassword }) {
+function AddUserModal({ open, initialTab, onClose, units, users, userUnits, saving, writeAction, showToast, onTempPassword }) {
   const dialogRef = useRef(null);
   const tabRefs = useRef([]);
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -51,11 +51,17 @@ function AddUserModal({ open, initialTab, onClose, units, users, saving, writeAc
   }, [open, initialTab]);
 
   const parsedImport = useMemo(
-    () => parseUserImportText(impText, defaultPw, users),
-    [impText, defaultPw, users]
+    () => parseUserImportText(impText, defaultPw, users, units, userUnits),
+    [impText, defaultPw, users, units, userUnits]
   );
   const validImportRows = parsedImport.filter((r) => r.valid);
   const skippedImportCount = parsedImport.length - validImportRows.length;
+  const roleLabelMap = {
+    STAF: 'Staf',
+    KOORDINATOR: 'Koordinator',
+    MANAJER: 'Manajer',
+    SUPER_ADMIN: 'Super Admin',
+  };
 
   const isUnitRole = peran === 'KOORDINATOR' || peran === 'MANAJER';
   const filteredUnits = useMemo(() => {
@@ -93,15 +99,28 @@ function AddUserModal({ open, initialTab, onClose, units, users, saving, writeAc
         'POST',
         {
           default_password: pw,
-          users: validImportRows.map(({ nik: n, nama: nm, password: p }) => ({ nik: n, nama: nm, password: p })),
+          users: validImportRows.map(({ nik: n, nama: nm, unit, unit_home, unit_ids, has_unit_col, jabatan, peran: pRole, password: p }) => ({
+            nik: n,
+            nama: nm,
+            unit,
+            unit_home,
+            unit_ids,
+            require_unit: Boolean(has_unit_col),
+            jabatan,
+            peran: pRole,
+            password: p,
+          })),
         },
         '',
         (out) => {
           const totalSkipped = (out.skipped?.length || 0) + skippedImportCount;
-          const msg = totalSkipped
-            ? `${out.imported} pengguna berhasil diimpor, ${totalSkipped} baris dilewati.`
-            : `${out.imported} pengguna berhasil diimpor.`;
-          showToast(msg, 'success');
+          const parts = [];
+          if (out.imported > 0) parts.push(`${out.imported} pengguna baru diimpor`);
+          if (out.assigned > 0) parts.push(`${out.assigned} penugasan unit dibuat`);
+          else if (out.merged > 0) parts.push(`${out.merged} penggabungan unit`);
+          if (!parts.length) parts.push(`${out.imported || 0} pengguna diproses`);
+          if (totalSkipped > 0) parts.push(`${totalSkipped} baris dilewati`);
+          showToast(`${parts.join(', ')}.`, 'success');
           onClose();
         }
       );
@@ -356,7 +375,7 @@ function AddUserModal({ open, initialTab, onClose, units, users, saving, writeAc
                     id="imp-text"
                     className="textarea tabular"
                     rows={6}
-                    placeholder={'nik,nama,password\n1995.03.11,"Ns. Sari Indah, S.Kep",annisa123\n1996.04.12,"Apt. Doni Pratama, S.Farm",'}
+                    placeholder={'NIK\tNAMA\tUNIT\tJABATAN DI UNIT\n1995.03.11\tNoviyanti Alawiyah\tAKUNTANSI\tKoordinator Unit\n1996.04.12\tApt. Doni Pratama, S.Farm\tFarmasi\tManajer'}
                     value={impText}
                     onChange={(e) => {
                       setImpText(e.target.value);
@@ -364,7 +383,7 @@ function AddUserModal({ open, initialTab, onClose, units, users, saving, writeAc
                     }}
                   />
                   <p className="field-help">
-                    Kolom: <strong>NIK</strong>, <strong>Nama Pengguna</strong>, dan <strong>Password</strong> (opsional, otomatis <code>annisa123</code>). Mendukung pemisah koma, titik koma, atau tab Excel.
+                    Mendukung kolom <strong>NIK, NAMA, UNIT, JABATAN DI UNIT</strong> (plus <strong>PASSWORD</strong> opsional, otomatis <code>annisa123</code>) maupun format lama <strong>NIK, NAMA</strong>. NIK yang sama boleh diimpor berulang jika memegang 2 unit atau lebih; baris dengan unit yang belum ada di daftar unit aktif akan dilewati. Pemisah koma, titik koma, atau tab Excel/Sheets.
                   </p>
                 </div>
 
@@ -379,7 +398,8 @@ function AddUserModal({ open, initialTab, onClose, units, users, saving, writeAc
                           <tr>
                             <th>NIK</th>
                             <th>Nama Pengguna</th>
-                            <th>Password</th>
+                            <th>Unit</th>
+                            <th>Jabatan &amp; Peran</th>
                             <th>Status</th>
                           </tr>
                         </thead>
@@ -388,9 +408,14 @@ function AddUserModal({ open, initialTab, onClose, units, users, saving, writeAc
                             <tr key={r.row}>
                               <td className="tabular">{r.nik || '-'}</td>
                               <td>{r.nama || '-'}</td>
-                              <td className="tabular">{r.password || '-'}</td>
+                              <td>{r.unit_names?.length ? r.unit_names.join(', ') : (r.unit_home || r.unit || '-')}</td>
                               <td>
-                                <span className={`status-pill status-${r.valid ? 'success' : 'danger'}`}>
+                                {r.jabatan
+                                  ? `${r.jabatan} (${roleLabelMap[r.peran] || r.peran})`
+                                  : (roleLabelMap[r.peran] || r.peran)}
+                              </td>
+                              <td>
+                                <span className={`status-pill status-${!r.valid ? 'danger' : (r.warning ? 'warning' : 'success')}`}>
                                   {r.reason}
                                 </span>
                               </td>
@@ -692,6 +717,7 @@ export function AdminUsersView() {
         onClose={() => setModalState((prev) => ({ ...prev, open: false }))}
         units={activeUnits}
         users={state.users}
+        userUnits={state.userUnits}
         saving={saving}
         writeAction={writeAction}
         showToast={showToast}

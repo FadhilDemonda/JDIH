@@ -37,7 +37,7 @@ const columns = {
   Users: 'id nik nama unit_home is_super_admin is_active must_change_password password_hash',
   Units: 'id kode nama drive_folder_id is_active',
   User_Units: 'id user_id nama_user unit_id nama_unit peran is_active',
-  Categories: 'id kode label contoh_nomor template_version urutan sections',
+  Categories: 'id kode label contoh_nomor template_version urutan is_active allow_template layout_type sections',
   Documents: 'id unit_id nama_unit category_id jenis_dokumen status_aktif alasan_tidak_aktif tgl_tidak_aktif created_by created_by_id',
   Document_Versions: 'id document_id revisi_label judul nomor tgl_dokumen tgl_berlaku kata_kunci ringkasan_perubahan metode status template_version template_sections edit_version created_by created_by_id submitted_at approved_at approved_by approved_by_id return_note attachment_ids',
   Version_Sections: 'id version_id section_code urut isi',
@@ -277,6 +277,26 @@ export function decodeCloudTables(rawTables) {
   const userIdByName = new Map(state.users.map((user) => [user.nama, user.id]));
 
   state.userUnits = state.userUnits.map(({ nama_user, nama_unit, ...entry }) => entry);
+  state.categories = state.categories.map((cat, idx) => {
+    const allowTemplate = cat.allow_template !== false && String(cat.allow_template).toUpperCase() !== 'FALSE';
+    const rawLayout = String(cat.layout_type || '').trim().toUpperCase();
+    const layoutType = !allowTemplate
+      ? 'STANDARD'
+      : (rawLayout === 'SPO' || rawLayout === 'STANDARD'
+          ? rawLayout
+          : (cat.kode === 'SPO' || cat.id === 'cat-spo' ? 'SPO' : 'STANDARD'));
+    const urutan = Number(cat.urutan);
+    const tplVer = Number(cat.template_version);
+    return {
+      ...cat,
+      urutan: Number.isSafeInteger(urutan) && urutan >= 1 ? urutan : idx + 1,
+      template_version: Number.isSafeInteger(tplVer) && tplVer >= 1 ? tplVer : 1,
+      is_active: cat.is_active !== false && String(cat.is_active).toUpperCase() !== 'FALSE',
+      allow_template: allowTemplate,
+      layout_type: layoutType,
+      sections: Array.isArray(cat.sections) ? cat.sections : [],
+    };
+  });
   state.documents = state.documents.map(({ nama_unit, jenis_dokumen, created_by_id, ...doc }) => ({
     ...doc,
     created_by: resolveUserRef(created_by_id, doc.created_by, usersById, userIdByName),

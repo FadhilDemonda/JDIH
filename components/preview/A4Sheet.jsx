@@ -1,7 +1,7 @@
 'use client';
 
 import { useJdih } from '@/components/providers/JdihProvider';
-import { getCategory, getUnit, SPO_SECTION_LABELS } from '@/lib/domain';
+import { getCategory, getUnit, isSpoCategoryLayout, SPO_SECTION_LABELS } from '@/lib/domain';
 import { formatDateID } from '@/lib/format';
 import { AnnotatedText } from './AnnotatedText';
 
@@ -11,10 +11,11 @@ export function A4Sheet({ version, doc, annotations = [] }) {
   const cat = getCategory(state, doc.category_id);
   const sections = version.sections || {};
 
-  if (cat?.kode === 'SPO' || doc?.category_id === 'cat-spo') {
+  if (isSpoCategoryLayout(cat, doc)) {
     const secEntries = version.template_sections || cat?.sections || [];
     const approver = sections.PEJABAT_PENETAP?.trim() || 'Dr. dr. Ediansyah, MARS';
     const issuedDate = formatDateID(version.tgl_berlaku || version.tgl_dokumen);
+    const isDefaultSpo = cat?.kode === 'SPO' || doc?.category_id === 'cat-spo';
 
     return (
       <div className="a4-sheet-scroll">
@@ -62,7 +63,13 @@ export function A4Sheet({ version, doc, annotations = [] }) {
                 </td>
               </tr>
               <tr>
-                <td className="a4-spo-type">STANDAR<br />PROSEDUR<br />OPERASIONAL</td>
+                <td className="a4-spo-type">
+                  {isDefaultSpo ? (
+                    <>STANDAR<br />PROSEDUR<br />OPERASIONAL</>
+                  ) : (
+                    (cat?.label || 'DOKUMEN').toUpperCase()
+                  )}
+                </td>
                 <td className="a4-spo-meta-cell">
                   <div>Tanggal Terbit</div>
                   <div className="tabular">{issuedDate}</div>

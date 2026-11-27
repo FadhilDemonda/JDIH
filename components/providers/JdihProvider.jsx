@@ -147,12 +147,12 @@ export function JdihProvider({ children }) {
     }
   }, [dirtyDraft, receive, router]);
 
-  const writeAction = useCallback(async (url, method, body, successMessage, onDone) => {
+  const writeAction = useCallback(async (url, method, body, successMessage, onDone, options) => {
     if (savingRef.current) return null;
     savingRef.current = true;
     setSaving(true);
     try {
-      const result = await api(url, method, body);
+      const result = await api(url, method, body, options);
       if (result.state) receive(result.state);
       if (successMessage) showToast(successMessage, 'success');
       if (onDone) await onDone(result);
@@ -162,7 +162,8 @@ export function JdihProvider({ children }) {
         receive(EMPTY_SNAPSHOT);
         router.replace('/login');
       }
-      showToast(error.message, 'error');
+      if (options?.onError) options.onError(error);
+      else showToast(error.message, 'error');
       return null;
     } finally {
       savingRef.current = false;

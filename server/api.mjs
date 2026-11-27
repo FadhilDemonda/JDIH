@@ -3,15 +3,19 @@ import bcrypt from 'bcryptjs';
 import { checkFile, fileStream, loadSeed, loadState, saveChunk, saveState, serialize } from './store.mjs';
 import { backupSpreadsheet, beginCloudUpload, cloudEnabled, ensureUnitFolder, removeEmptyUnitFolder, renameUnitFolder, syncDocumentDriveFolders, trashCloudFile } from './google-store.mjs';
 import { renderDocumentPdf } from './pdf.mjs';
+import { mapJabatanToRole, mergeUnitHome, parseUnitImportCsv, resolveImportUnits } from '../lib/format.js';
 
 const MINUTE = 60_000;
 const MAX_FILE = 20 * 1024 * 1024;
 const CHUNK = 3 * 1024 * 1024;
 const JSON_LIMIT = 2 * 1024 * 1024;
+const UNIT_IMPORT_BATCH_SIZE = 8;
 const EDITABLE = ['DRAF', 'DIKEMBALIKAN'];
 const PENDING = 'MENUNGGU_VERIFIKASI';
 const APPROVED = 'DISETUJUI';
 const NIK = /^\d{4}\.\d{2}\.\d{2}$/;
+const CATEGORY_CODE = /^[A-Z0-9_-]+$/;
+const SECTION_TYPES = new Set(['text', 'textarea', 'list']);
 const DEFAULT_USER_PASSWORD = 'annisa123';
 const COOKIE = 'jdih_session';
 const DUMMY_HASH = '$2b$10$fu/qFj7vaqU2YPPHjE3uz.sUNWHsY3JzI4eDgsl4Yf2.bVuKcDVDG';
@@ -100,6 +104,79 @@ function normalizeNik(raw) {
   return text;
 }
 
+function normalizeCategory(category, idx = 0) {
+  const allowTemplate = category?.allow_template !== false;
+  const rawLayout = String(category?.layout_type || '').trim().toUpperCase();
+  const layoutType = !allowTemplate
+    ? 'STANDARD'
+    : (rawLayout === 'SPO' || rawLayout === 'STANDARD'
+        ? rawLayout
+        : (category?.kode === 'SPO' || category?.id === 'cat-spo' ? 'SPO' : 'STANDARD'));
+  const urutan = Number(category?.urutan);
+  const templateVersion = Number(category?.template_version);
+  return {
+    ...category,
+    urutan: Number.isSafeInteger(urutan) && urutan >= 1 ? urutan : idx + 1,
+    template_version: Number.isSafeInteger(templateVersion) && templateVersion >= 1 ? templateVersion : 1,
+    is_active: category?.is_active !== false,
+    allow_template: allowTemplate,
+    layout_type: layoutType,
+    sections: Array.isArray(category?.sections) ? category.sections : [],
+  };
+}
+
+function sortCategories(categories = []) {
+  return [...categories].sort((a, b) => {
+    const orderDiff = (Number(a?.urutan) || 999) - (Number(b?.urutan) || 999);
+    if (orderDiff !== 0) return orderDiff;
+    return String(a?.label || '').localeCompare(String(b?.label || ''), 'id', { sensitivity: 'base' });
+  });
+}
+
+function normalizeSectionCode(raw, fallbackIndex) {
+  const cleaned = String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 56);
+  return cleaned || `BAGIAN_${fallbackIndex + 1}`;
+}
+
+function validateCategorySections(rawSections, allowTemplate) {
+  if (!allowTemplate && (rawSections === undefined || rawSections === null)) return [];
+  invalid(Array.isArray(rawSections) && rawSections.length <= 40, 'Daftar bagian template tidak valid (maksimal 40 bagian).');
+  if (allowTemplate) {
+    invalid(rawSections.length >= 1, 'Minimal satu bagian template wajib diisi.');
+  }
+  const usedCodes = new Set();
+  const explicitCodes = new Set();
+  return rawSections.map((item, idx) => {
+    invalid(item && typeof item === 'object' && !Array.isArray(item), 'Format bagian template tidak valid.');
+    const label = textField(item.label, 'Nama bagian template', 160);
+    const type = item.type === undefined ? 'textarea' : item.type;
+    invalid(SECTION_TYPES.has(type), 'Tipe bagian template tidak valid.');
+    const rawCode = typeof item.code === 'string' ? item.code.trim() : '';
+    let code;
+    if (rawCode) {
+      code = rawCode.toUpperCase().replace(/\s+/g, '_');
+      invalid(/^[A-Z0-9_]{1,60}$/.test(code), 'Kode bagian template hanya boleh huruf kapital, angka, dan garis bawah.');
+      invalid(!explicitCodes.has(code), `Kode bagian template ${code} duplikat.`);
+      explicitCodes.add(code);
+    } else {
+      const base = normalizeSectionCode(label, idx);
+      code = base;
+      let suffix = 2;
+      while (usedCodes.has(code)) {
+        code = `${base.slice(0, 54)}_${suffix}`;
+        suffix += 1;
+      }
+    }
+    usedCodes.add(code);
+    return { code, label, type };
+  });
+}
+
 async function initialize() {
   const seed = await loadSeed();
   const demo = process.env.JDIH_DEMO === '1';
@@ -111,7 +188,7 @@ async function initialize() {
   }
   const data = {
     units: seed.UNITS.map(({ drive_folder_id, ...unit }) => unit),
-    categories: seed.CATEGORIES, users: [], userUnits: [], documents: [], versions: [],
+    categories: sortCategories(seed.CATEGORIES.map((category, idx) => normalizeCategory(category, idx))), users: [], userUnits: [], documents: [], versions: [],
     reviewLogs: [], documentLogs: [], notifications: [], sessions: {}, attempts: {},
     uploads: [], operations: {},
   };
@@ -207,7 +284,7 @@ function snapshot(data, user) {
     userUnits: data.userUnits.filter((entry) => user.is_super_admin || (entry.user_id === user.id
       && data.units.some((unit) => unit.id === entry.unit_id && unit.is_active))),
     units: data.units.map(({ drive_folder_id, ...unit }) => ({ ...unit, has_manager: user.is_super_admin || managers(data, unit.id).some((entry) => entry.user_id !== user.id) })),
-    categories: data.categories,
+    categories: sortCategories(data.categories.map((category, idx) => normalizeCategory(category, idx))),
     documents: data.documents.filter((doc) => documentIds.has(doc.id)),
     versions: versions.map(safeVersion),
     reviewLogs,
@@ -246,7 +323,7 @@ function authorizeReplay(data, user, route, parts, input) {
 function draft(data, doc, user, method, from) {
   const category = find(data.categories, doc.category_id, 'Jenis dokumen');
   const numbers = data.versions.filter((v) => v.document_id === doc.id).map((v) => Number(v.revisi_label) || 0);
-  const template = structuredClone(from?.template_sections || category.sections);
+  const template = structuredClone(from?.template_sections || category.sections || []);
   const sections = method === 'TEMPLATE'
     ? structuredClone(from?.sections || Object.fromEntries(template.map(({ code, type }) => [code, type === 'list' ? [''] : ''])))
     : {};
@@ -352,6 +429,53 @@ function hasOpenVersion(data, doc) {
   return data.versions.some((v) => v.document_id === doc.id && [...EDITABLE, PENDING].includes(v.status));
 }
 
+async function createUnits(list, pending) {
+  const folders = await Promise.allSettled(pending.map(ensureUnitFolder));
+  const failure = folders.find(({ status }) => status === 'rejected');
+  if (failure) throw failure.reason;
+
+  return pending.map(({ kode, nama, is_active = true }, index) => {
+    const unit = { id: nextId(list, 'u', 2), kode, nama, is_active, drive_folder_id: folders[index].value };
+    list.push(unit);
+    return unit;
+  });
+}
+
+async function importUnits(list, { csv, cursor = 0 }) {
+  invalid(typeof csv === 'string' && csv.trim(), 'Pilih berkas CSV yang berisi data unit.');
+  const rows = parseUnitImportCsv(csv);
+  invalid(rows, 'CSV wajib memiliki kolom KODE dan UNIT.');
+  invalid(rows.length > 0, 'CSV belum berisi baris data unit.');
+  invalid(Number.isSafeInteger(cursor) && cursor >= 0 && cursor < rows.length, 'Posisi impor tidak valid.');
+
+  const codes = new Set(list.map((unit) => unit.kode.trim().toUpperCase()));
+  const names = new Set(list.map((unit) => unit.nama.trim().toLowerCase()));
+  const skipped = [];
+  const pending = [];
+  for (; cursor < rows.length && pending.length < UNIT_IMPORT_BATCH_SIZE; cursor += 1) {
+    const { row, kode, nama, malformed } = rows[cursor];
+    const code = kode.toUpperCase();
+    const name = nama.toLowerCase();
+    let reason;
+    if (malformed || !code || !nama || code.length > 20 || nama.length > 160) {
+      reason = 'Kode atau nama unit tidak valid.';
+    } else if (codes.has(code)) {
+      reason = 'Kode unit sudah terdaftar atau duplikat di CSV.';
+    } else if (names.has(name)) {
+      reason = 'Nama unit sudah terdaftar atau duplikat di CSV.';
+    }
+    if (reason) {
+      skipped.push({ row, reason });
+      continue;
+    }
+    pending.push({ kode: code, nama });
+    codes.add(code);
+    names.add(name);
+  }
+  await createUnits(list, pending);
+  return { imported: pending.length, skipped, total: rows.length, nextCursor: cursor < rows.length ? cursor : null };
+}
+
 async function admin(data, user, method, parts, input) {
   allowed(user.is_super_admin);
   const [collection, id] = parts;
@@ -359,6 +483,7 @@ async function admin(data, user, method, parts, input) {
   requireThat(Array.isArray(list), 404, 'Rute tidak ditemukan.');
   if (method === 'GET') return { items: collection === 'users' ? list.map(safeUser) : list };
   if (collection === 'units') {
+    if (method === 'POST' && id === 'import') return importUnits(list, input);
     if (method === 'DELETE') {
       const unit = find(list, id, 'Unit');
       conflict(!data.documents.some((doc) => doc.unit_id === id), 'Unit masih memiliki dokumen.');
@@ -368,20 +493,20 @@ async function admin(data, user, method, parts, input) {
       return {};
     }
     if (method === 'POST' || method === 'PATCH') {
-      const unit = method === 'POST' ? { id: nextId(list, 'u', 2), is_active: true } : find(list, id, 'Unit');
-      const kode = input.kode === undefined ? unit.kode : textField(input.kode, 'Kode unit', 20).toUpperCase();
-      const nama = input.nama === undefined ? unit.nama : textField(input.nama, 'Nama unit', 160);
+      const unit = method === 'PATCH' ? find(list, id, 'Unit') : null;
+      const kode = input.kode === undefined ? unit?.kode : textField(input.kode, 'Kode unit', 20).toUpperCase();
+      const nama = input.nama === undefined ? unit?.nama : textField(input.nama, 'Nama unit', 160);
       invalid(kode && nama, 'Kode dan nama unit wajib diisi.');
-      conflict(!list.some((u) => u.id !== unit.id && (u.kode === kode || u.nama.toLowerCase() === nama.toLowerCase())), 'Kode atau nama unit sudah terdaftar.');
+      conflict(!list.some((u) => u.id !== unit?.id && (u.kode === kode || u.nama.toLowerCase() === nama.toLowerCase())), 'Kode atau nama unit sudah terdaftar.');
+      if (!unit) {
+        const [created] = await createUnits(list, [{ kode, nama, is_active: input.is_active !== false }]);
+        return { id: created.id };
+      }
       if (unit.drive_folder_id && (unit.kode !== kode || unit.nama !== nama)) {
         await renameUnitFolder(unit.drive_folder_id, kode, nama);
       }
       Object.assign(unit, { kode, nama });
       if (typeof input.is_active === 'boolean') unit.is_active = input.is_active;
-      if (method === 'POST') {
-        unit.drive_folder_id = await ensureUnitFolder(unit);
-        list.push(unit);
-      }
       return { id: unit.id };
     }
   }
@@ -393,8 +518,33 @@ async function admin(data, user, method, parts, input) {
       validPassword(defaultPassword);
       invalid(Array.isArray(input.users) && input.users.length >= 1 && input.users.length <= 500,
         'Daftar pengguna impor wajib berisi 1 hingga 500 baris.');
-      const existingNiks = new Set(list.map((u) => u.nik));
-      const validRows = [];
+      const activeUnits = data.units.filter((u) => u.is_active);
+      const activeUnitMap = new Map(activeUnits.map((u) => [u.id, u]));
+      const existingByNik = new Map(list.map((u) => [u.nik, u]));
+      const assignedUnitIdsByNik = new Map();
+      const unitNamesByNik = new Map();
+      const userIdToNik = new Map(list.map((u) => [u.id, u.nik]));
+      for (const u of list) {
+        const names = new Set();
+        for (const part of String(u.unit_home || '').split(',')) {
+          const clean = part.trim().toLowerCase();
+          if (clean && clean !== 'staf rs') names.add(clean);
+        }
+        unitNamesByNik.set(u.nik, names);
+        assignedUnitIdsByNik.set(u.nik, new Set());
+      }
+      for (const entry of data.userUnits) {
+        if (!entry.is_active) continue;
+        const ownerNik = userIdToNik.get(entry.user_id);
+        if (!ownerNik) continue;
+        assignedUnitIdsByNik.get(ownerNik).add(entry.unit_id);
+        const unitObj = activeUnitMap.get(entry.unit_id);
+        if (unitObj?.nama) unitNamesByNik.get(ownerNik).add(unitObj.nama.toLowerCase());
+      }
+
+      const pendingCreateByNik = new Map();
+      const newUsers = [];
+      const mergeActions = [];
       const skipped = [];
       for (let index = 0; index < input.users.length; index += 1) {
         const item = input.users[index];
@@ -412,42 +562,175 @@ async function admin(data, user, method, parts, input) {
           skipped.push({ row, nik, nama, reason: 'Nama pengguna wajib diisi (maks 180 karakter)' });
           continue;
         }
-        if (existingNiks.has(nik)) {
-          skipped.push({ row, nik, nama, reason: 'NIK sudah terdaftar atau duplikat' });
+
+        const explicitPeran = typeof item?.peran === 'string' ? item.peran.trim().toUpperCase() : '';
+        let role = ['STAF', 'KOORDINATOR', 'MANAJER', 'SUPER_ADMIN'].includes(explicitPeran)
+          ? explicitPeran
+          : mapJabatanToRole(typeof item?.jabatan === 'string' ? item.jabatan : '');
+
+        let matchedUnits = [];
+        if (Array.isArray(item?.unit_ids) && item.unit_ids.length > 0) {
+          const seenUnitIds = new Set();
+          for (const uid of item.unit_ids) {
+            const unitObj = activeUnitMap.get(uid);
+            if (unitObj && !seenUnitIds.has(unitObj.id)) {
+              seenUnitIds.add(unitObj.id);
+              matchedUnits.push(unitObj);
+            }
+          }
+        } else {
+          const unitInput = (typeof item?.unit === 'string' && item.unit.trim())
+            ? item.unit
+            : (typeof item?.unit_home === 'string' ? item.unit_home : '');
+          matchedUnits = resolveImportUnits(unitInput, activeUnits).matchedUnits;
+        }
+
+        const rawUnit = typeof item?.unit === 'string' ? item.unit.trim() : '';
+        const requireUnit = Boolean(item?.require_unit) || rawUnit.length > 0 || role === 'KOORDINATOR' || role === 'MANAJER';
+        if (requireUnit && role !== 'SUPER_ADMIN' && matchedUnits.length === 0) {
+          skipped.push({
+            row,
+            nik,
+            nama,
+            reason: rawUnit ? 'Unit tidak ditemukan di daftar unit aktif' : 'Unit kosong / tidak ditemukan',
+          });
           continue;
         }
-        if (password.length < 8 || Buffer.byteLength(password) > 72 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-          skipped.push({ row, nik, nama, reason: 'Password minimal 8 karakter kombinasi huruf dan angka' });
+
+        const rawUnitFallback = (typeof item?.unit_home === 'string' && item.unit_home.trim())
+          || rawUnit
+          || 'Staf RS';
+        const candidateUnitNames = matchedUnits.length
+          ? matchedUnits.map((u) => u.nama)
+          : (rawUnitFallback && rawUnitFallback.toLowerCase() !== 'staf rs' ? [rawUnitFallback] : []);
+        const unitHome = (matchedUnits.map((u) => u.nama).join(', ') || rawUnitFallback).slice(0, 160);
+
+        if (!existingByNik.has(nik) && !pendingCreateByNik.has(nik)) {
+          if (password.length < 8 || Buffer.byteLength(password) > 72 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+            skipped.push({ row, nik, nama, reason: 'Password minimal 8 karakter kombinasi huruf dan angka' });
+            continue;
+          }
+          const createdRow = {
+            nik,
+            nama,
+            password,
+            peran: role,
+            is_super_admin: role === 'SUPER_ADMIN',
+            unit_home: unitHome,
+            unit_ids: matchedUnits.map((u) => u.id),
+          };
+          pendingCreateByNik.set(nik, createdRow);
+          newUsers.push(createdRow);
+          assignedUnitIdsByNik.set(
+            nik,
+            new Set((role === 'KOORDINATOR' || role === 'MANAJER') ? createdRow.unit_ids : [])
+          );
+          unitNamesByNik.set(nik, new Set(candidateUnitNames.map((n) => n.toLowerCase())));
           continue;
         }
-        existingNiks.add(nik);
-        validRows.push({ nik, nama, password });
+
+        if (existingByNik.has(nik) && !existingByNik.get(nik).is_active) {
+          skipped.push({ row, nik, nama, reason: 'Akun NIK nonaktif' });
+          continue;
+        }
+
+        const nikAssigned = assignedUnitIdsByNik.get(nik);
+        const nikUnitNames = unitNamesByNik.get(nik);
+        if ((role === 'KOORDINATOR' || role === 'MANAJER') && matchedUnits.length > 0) {
+          const newUnits = matchedUnits.filter((u) => !nikAssigned.has(u.id));
+          if (newUnits.length === 0) {
+            skipped.push({ row, nik, nama, reason: 'Penugasan unit sudah ada atau duplikat' });
+            continue;
+          }
+          newUnits.forEach((u) => {
+            nikAssigned.add(u.id);
+            nikUnitNames.add(u.nama.toLowerCase());
+          });
+          mergeActions.push({
+            nik,
+            peran: role,
+            unitIds: newUnits.map((u) => u.id),
+            unitHomeAppend: newUnits.map((u) => u.nama).join(', '),
+          });
+          continue;
+        }
+
+        if (role === 'STAF' && candidateUnitNames.some((n) => !nikUnitNames.has(n.toLowerCase()))) {
+          candidateUnitNames.forEach((n) => nikUnitNames.add(n.toLowerCase()));
+          mergeActions.push({
+            nik,
+            peran: 'STAF',
+            unitIds: [],
+            unitHomeAppend: candidateUnitNames.join(', '),
+          });
+          continue;
+        }
+
+        skipped.push({ row, nik, nama, reason: 'NIK sudah terdaftar atau duplikat' });
       }
-      invalid(validRows.length > 0, skipped[0]
+      invalid(newUsers.length > 0 || mergeActions.length > 0, skipped[0]
         ? 'Tidak ada data valid untuk diimpor (' + skipped[0].reason + ').'
         : 'Tidak ada data valid untuk diimpor.');
       const hashByPassword = new Map();
-      for (const row of validRows) {
+      for (const row of newUsers) {
         if (!hashByPassword.has(row.password)) {
           hashByPassword.set(row.password, await bcrypt.hash(row.password, 12));
         }
       }
       const createdIds = [];
-      for (const row of validRows) {
+      const createdByNik = new Map();
+      let assigned = 0;
+      let merged = 0;
+      for (const row of newUsers) {
         const profile = {
           id: nextId(list, 'usr'),
           nik: row.nik,
           nama: row.nama,
-          unit_home: 'Staf RS',
+          unit_home: row.unit_home,
           is_active: true,
-          is_super_admin: false,
+          is_super_admin: row.is_super_admin,
           must_change_password: true,
           password_hash: hashByPassword.get(row.password),
         };
         list.push(profile);
+        createdByNik.set(profile.nik, profile);
         createdIds.push(profile.id);
+        if ((row.peran === 'KOORDINATOR' || row.peran === 'MANAJER') && row.unit_ids.length > 0) {
+          for (const unitId of row.unit_ids) {
+            if (!data.userUnits.some((entry) => entry.is_active && entry.user_id === profile.id && entry.unit_id === unitId)) {
+              data.userUnits.push({
+                id: nextId(data.userUnits, 'uu'),
+                user_id: profile.id,
+                unit_id: unitId,
+                peran: row.peran,
+                is_active: true,
+              });
+              assigned += 1;
+            }
+          }
+        }
       }
-      return { imported: createdIds.length, skipped, ids: createdIds };
+      for (const action of mergeActions) {
+        const target = existingByNik.get(action.nik) || createdByNik.get(action.nik);
+        if (!target) continue;
+        target.unit_home = mergeUnitHome(target.unit_home, action.unitHomeAppend);
+        if ((action.peran === 'KOORDINATOR' || action.peran === 'MANAJER') && action.unitIds.length > 0) {
+          for (const unitId of action.unitIds) {
+            if (!data.userUnits.some((entry) => entry.is_active && entry.user_id === target.id && entry.unit_id === unitId)) {
+              data.userUnits.push({
+                id: nextId(data.userUnits, 'uu'),
+                user_id: target.id,
+                unit_id: unitId,
+                peran: action.peran,
+                is_active: true,
+              });
+              assigned += 1;
+            }
+          }
+        }
+        merged += 1;
+      }
+      return { imported: createdIds.length, assigned, merged, skipped, ids: createdIds };
     }
     if (method === 'POST' && !id) {
       invalid(typeof input.nik === 'string' && NIK.test(input.nik), 'Format NIK wajib 0000.00.00.');
@@ -537,12 +820,100 @@ async function admin(data, user, method, parts, input) {
       return {};
     }
   }
-  if (collection === 'categories' && method === 'PATCH') {
-    const category = find(list, id, 'Jenis dokumen');
-    category.contoh_nomor = textField(input.contoh_nomor, 'Contoh nomor', 180);
-    invalid(Number.isSafeInteger(input.template_version) && input.template_version >= 1, 'Versi template tidak valid.');
-    category.template_version = input.template_version;
-    return {};
+  if (collection === 'categories') {
+    if (method === 'POST' && !id) {
+      const kode = textField(input.kode, 'Kode jenis dokumen', 30).toUpperCase().replace(/\s+/g, '_');
+      invalid(CATEGORY_CODE.test(kode), 'Kode jenis dokumen hanya boleh huruf, angka, tanda hubung (-), atau garis bawah (_).');
+      const label = textField(input.label, 'Label jenis dokumen', 120);
+      const contohNomor = textField(input.contoh_nomor, 'Contoh nomor', 180);
+      conflict(!list.some((c) => c.kode.toUpperCase() === kode || c.label.toLowerCase() === label.toLowerCase()),
+        'Kode atau label jenis dokumen sudah terdaftar.');
+      const allowTemplate = input.allow_template !== undefined ? Boolean(input.allow_template) : true;
+      const isActive = input.is_active !== undefined ? Boolean(input.is_active) : true;
+      let layoutType = 'STANDARD';
+      if (allowTemplate) {
+        layoutType = input.layout_type === undefined ? 'STANDARD' : String(input.layout_type).trim().toUpperCase();
+        invalid(['STANDARD', 'SPO'].includes(layoutType), 'Format layout PDF tidak valid.');
+      }
+      const nextOrder = Math.max(0, ...list.map((c) => Number(c.urutan) || 0)) + 1;
+      const urutan = input.urutan === undefined ? nextOrder : Number(input.urutan);
+      invalid(Number.isSafeInteger(urutan) && urutan >= 1 && urutan <= 999, 'Urutan jenis dokumen tidak valid.');
+      const templateVersion = input.template_version === undefined ? 1 : Number(input.template_version);
+      invalid(Number.isSafeInteger(templateVersion) && templateVersion >= 1 && templateVersion <= 9999, 'Versi template tidak valid.');
+      const sections = validateCategorySections(input.sections, allowTemplate);
+      const category = normalizeCategory({
+        id: nextId(list, 'cat', 3),
+        kode,
+        label,
+        contoh_nomor: contohNomor,
+        urutan,
+        is_active: isActive,
+        allow_template: allowTemplate,
+        layout_type: layoutType,
+        template_version: templateVersion,
+        sections,
+      });
+      list.push(category);
+      data.categories = sortCategories(list);
+      return { id: category.id, category };
+    }
+    if (method === 'PATCH') {
+      const category = find(list, id, 'Jenis dokumen');
+      const normalized = normalizeCategory(category);
+      const kode = input.kode === undefined
+        ? normalized.kode
+        : textField(input.kode, 'Kode jenis dokumen', 30).toUpperCase().replace(/\s+/g, '_');
+      invalid(CATEGORY_CODE.test(kode), 'Kode jenis dokumen hanya boleh huruf, angka, tanda hubung (-), atau garis bawah (_).');
+      const label = input.label === undefined ? normalized.label : textField(input.label, 'Label jenis dokumen', 120);
+      conflict(!list.some((c) => c.id !== category.id && (c.kode.toUpperCase() === kode || c.label.toLowerCase() === label.toLowerCase())),
+        'Kode atau label jenis dokumen sudah terdaftar.');
+      const contohNomor = input.contoh_nomor === undefined
+        ? normalized.contoh_nomor
+        : textField(input.contoh_nomor, 'Contoh nomor', 180);
+      const urutan = input.urutan === undefined ? normalized.urutan : Number(input.urutan);
+      invalid(Number.isSafeInteger(urutan) && urutan >= 1 && urutan <= 999, 'Urutan jenis dokumen tidak valid.');
+      const templateVersion = input.template_version === undefined ? normalized.template_version : Number(input.template_version);
+      invalid(Number.isSafeInteger(templateVersion) && templateVersion >= 1 && templateVersion <= 9999, 'Versi template tidak valid.');
+      const isActive = typeof input.is_active === 'boolean' ? input.is_active : normalized.is_active;
+      if (!isActive) {
+        conflict(list.some((c) => c.id !== category.id && c.is_active !== false), 'Minimal satu jenis dokumen harus tetap aktif.');
+      }
+      const nextAllowTemplate = input.allow_template !== undefined ? Boolean(input.allow_template) : normalized.allow_template;
+      let nextLayoutType = 'STANDARD';
+      if (nextAllowTemplate) {
+        nextLayoutType = input.layout_type === undefined
+          ? normalized.layout_type
+          : String(input.layout_type).trim().toUpperCase();
+        invalid(['STANDARD', 'SPO'].includes(nextLayoutType), 'Format layout PDF tidak valid.');
+      }
+      let nextSections = normalized.sections;
+      if (input.sections !== undefined) {
+        nextSections = validateCategorySections(input.sections, nextAllowTemplate);
+      } else if (nextAllowTemplate) {
+        invalid((nextSections || []).length >= 1, 'Tambahkan minimal satu bagian template sebelum mengaktifkan mode template.');
+      }
+      Object.assign(category, {
+        kode,
+        label,
+        contoh_nomor: contohNomor,
+        urutan,
+        is_active: isActive,
+        allow_template: nextAllowTemplate,
+        layout_type: nextLayoutType,
+        template_version: templateVersion,
+        sections: nextSections,
+      });
+      data.categories = sortCategories(list.map((c, idx) => normalizeCategory(c, idx)));
+      return { category: data.categories.find((c) => c.id === category.id) };
+    }
+    if (method === 'DELETE') {
+      find(list, id, 'Jenis dokumen');
+      conflict(!data.documents.some((doc) => doc.category_id === id),
+        'Jenis dokumen masih memiliki dokumen; nonaktifkan saja jika tidak dipakai lagi.');
+      conflict(list.some((c) => c.id !== id && c.is_active !== false), 'Minimal satu jenis dokumen aktif harus tersedia.');
+      data.categories = sortCategories(list.filter((c) => c.id !== id));
+      return {};
+    }
   }
   throw new ApiError(404, 'Rute tidak ditemukan.');
 }
@@ -572,9 +943,11 @@ async function documents(data, user, method, parts, input, url) {
   }
   if (method === 'POST' && !id) {
     const unit = find(data.units, input.unit_id, 'Unit');
-    find(data.categories, input.category_id, 'Jenis dokumen');
+    const category = normalizeCategory(find(data.categories, input.category_id, 'Jenis dokumen'));
     allowed(hasRole(data, user, 'KOORDINATOR', unit.id));
+    invalid(category.is_active !== false, 'Jenis dokumen sedang tidak aktif.');
     invalid(unit.is_active && ['TEMPLATE', 'UPLOAD'].includes(input.metode), 'Unit atau metode tidak valid.');
+    invalid(input.metode !== 'TEMPLATE' || category.allow_template !== false, 'Jenis dokumen ini hanya mendukung metode Unggah PDF.');
     const doc = { id: nextId(data.documents, 'doc'), unit_id: unit.id, category_id: input.category_id, status_aktif: 'AKTIF',
       alasan_tidak_aktif: '', tgl_tidak_aktif: '', created_by: user.id };
     data.documents.push(doc);
@@ -935,6 +1308,7 @@ export async function handleApi(request, [route, ...parts]) {
     const input = read ? {} : method === 'PUT' ? body : parseJson(body);
     return await serialize(async () => {
       const data = await loadState() || await initialize();
+      data.categories = sortCategories((data.categories || []).map((category, idx) => normalizeCategory(category, idx)));
       if (route === 'auth' && parts[0] === 'login' && method === 'POST') return login(request, data, input);
       const key = sessionKey(request);
       const session = Object.hasOwn(data.sessions, key) ? data.sessions[key] : null;

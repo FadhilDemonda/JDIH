@@ -6,7 +6,14 @@ import { useRouter } from 'next/navigation';
 import { useJdih } from '@/components/providers/JdihProvider';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { Icon } from '@/components/ui/Icon';
-import { getCurrentUser, getUserUnitsFor, isAnyKoordinator } from '@/lib/domain';
+import {
+  categoryAllowsTemplate,
+  getCurrentUser,
+  getSortedCategories,
+  getUserUnitsFor,
+  isAnyKoordinator,
+  isCategoryActive,
+} from '@/lib/domain';
 
 export function NewDocumentView() {
   const router = useRouter();
@@ -24,6 +31,11 @@ export function NewDocumentView() {
     return state.units.filter((u) => u.is_active && ids.includes(u.id));
   }, [allowed, state, user]);
 
+  const activeCategories = useMemo(
+    () => getSortedCategories(state.categories).filter(isCategoryActive),
+    [state.categories]
+  );
+
   useEffect(() => {
     if (!allowed) {
       router.replace('/403');
@@ -34,10 +46,35 @@ export function NewDocumentView() {
     }
   }, [allowed, allowedUnits, draftStep1.unitId, setDraftStep1, router]);
 
+  useEffect(() => {
+    if (!allowed || !activeCategories.length) return;
+    if (!draftStep1.categoryId || !activeCategories.some((c) => c.id === draftStep1.categoryId)) {
+      const firstCat = activeCategories[0];
+      setDraftStep1((prev) => ({
+        ...prev,
+        categoryId: firstCat.id,
+        metode: categoryAllowsTemplate(firstCat) ? prev.metode : 'UPLOAD',
+      }));
+    }
+  }, [allowed, activeCategories, draftStep1.categoryId, setDraftStep1]);
+
   if (!allowed) return null;
 
   const selectedUnitId =
     allowedUnits.some((u) => u.id === draftStep1.unitId) ? draftStep1.unitId : allowedUnits[0]?.id || '';
+  const selectedCategory =
+    activeCategories.find((c) => c.id === draftStep1.categoryId) || activeCategories[0] || null;
+  const selectedCategoryId = selectedCategory?.id || '';
+  const supportsTemplate = selectedCategory ? categoryAllowsTemplate(selectedCategory) : true;
+  const effectiveMetode = supportsTemplate ? draftStep1.metode : 'UPLOAD';
+
+  function selectCategory(cat) {
+    setDraftStep1((prev) => ({
+      ...prev,
+      categoryId: cat.id,
+      metode: categoryAllowsTemplate(cat) ? prev.metode : 'UPLOAD',
+    }));
+  }
 
   function handleRadioArrow(e, refs, values, onSelect) {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
@@ -79,7 +116,7 @@ export function NewDocumentView() {
           </div>
 
           <div className="field col-12">
-            <label>Jenis dokumen (5 jenis tetap RS AN-NISA) <span className="req-mark">*</span></label>
+            <label>Jenis dokumen <span className="req-mark">*</span></label>
             <div
               className="choice-grid"
               role="radiogroup"
@@ -88,22 +125,30 @@ export function NewDocumentView() {
                 handleRadioArrow(
                   e,
                   catRefs,
-                  state.categories.map((c) => c.id),
-                  (id) => setDraftStep1((prev) => ({ ...prev, categoryId: id }))
+                  activeCategories.map((c) => c.id),
+                  (id) => {
+                    const cat = activeCategories.find((item) => item.id === id);
+                    if (cat) selectCategory(cat);
+                  }
                 )
               }
             >
-              {state.categories.map((c, idx) => (
+              {activeCategories.map((c, idx) => (
                 <button
                   key={c.id}
                   ref={(el) => { catRefs.current[idx] = el; }}
                   type="button"
                   className="choice-option"
                   role="radio"
-                  aria-checked={draftStep1.categoryId === c.id}
-                  onClick={() => setDraftStep1((prev) => ({ ...prev, categoryId: c.id }))}
+                  aria-checked={selectedCategoryId === c.id}
+                  onClick={() => selectCategory(c)}
                 >
-                  <strong>{c.label}</strong>
+                  <div className="choice-option-head">
+                    <strong>{c.label}</strong>
+                    {!categoryAllowsTemplate(c) ? (
+                      <span className="status-pill status-neutral">PDF Tunggal</span>
+                    ) : null}
+                  </div>
                   <span className="tabular meta-label-sm">Contoh: {c.contoh_nomor}</span>
                 </button>
               ))}
@@ -116,32 +161,41 @@ export function NewDocumentView() {
               className="choice-grid"
               role="radiogroup"
               aria-label="Pilih metode penyusunan"
-              onKeyDown={(e) =>
+              onKeyDown={(e) => {
+                if (!supportsTemplate) return;
                 handleRadioArrow(
                   e,
                   methodRefs,
                   ['TEMPLATE', 'UPLOAD'],
                   (m) => setDraftStep1((prev) => ({ ...prev, metode: m }))
-                )
-              }
+                );
+              }}
             >
               <button
                 ref={(el) => { methodRefs.current[0] = el; }}
                 type="button"
                 className="choice-option"
                 role="radio"
-                aria-checked={draftStep1.metode === 'TEMPLATE'}
-                onClick={() => setDraftStep1((prev) => ({ ...prev, metode: 'TEMPLATE' }))}
+                disabled={!supportsTemplate}
+                aria-disabled={!supportsTemplate ? 'true' : undefined}
+                aria-checked={effectiveMetode === 'TEMPLATE'}
+                onClick={() => {
+                  if (supportsTemplate) setDraftStep1((prev) => ({ ...prev, metode: 'TEMPLATE' }));
+                }}
               >
                 <strong>Buat dari Template</strong>
-                <span className="meta-label-sm">Isi format resmi RS AN-NISA. Sistem akan membuat PDF.</span>
+                <span className="meta-label-sm">
+                  {supportsTemplate
+                    ? 'Isi format resmi RS AN-NISA. Sistem akan membuat PDF.'
+                    : 'Tidak tersedia untuk jenis dokumen ini (khusus unggah PDF).'}
+                </span>
               </button>
               <button
                 ref={(el) => { methodRefs.current[1] = el; }}
                 type="button"
                 className="choice-option"
                 role="radio"
-                aria-checked={draftStep1.metode === 'UPLOAD'}
+                aria-checked={effectiveMetode === 'UPLOAD'}
                 onClick={() => setDraftStep1((prev) => ({ ...prev, metode: 'UPLOAD' }))}
               >
                 <strong>Unggah PDF</strong>
@@ -156,12 +210,12 @@ export function NewDocumentView() {
           <button
             type="button"
             className="btn btn-primary"
-            disabled={saving || !selectedUnitId}
+            disabled={saving || !selectedUnitId || !selectedCategoryId}
             onClick={() =>
               writeAction(
                 'documents',
                 'POST',
-                { unit_id: selectedUnitId, category_id: draftStep1.categoryId, metode: draftStep1.metode },
+                { unit_id: selectedUnitId, category_id: selectedCategoryId, metode: effectiveMetode },
                 '',
                 ({ versionId }) => router.push(`/pengajuan/${versionId}`)
               )

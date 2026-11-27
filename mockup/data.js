@@ -49,6 +49,9 @@ window.JDIH_SEED = {
       template_version: 2,
       contoh_nomor: 'RSAN/SK/1/DIR/012',
       urutan: 1,
+      is_active: true,
+      allow_template: true,
+      layout_type: 'STANDARD',
       sections: [
         { code: 'PERIHAL', label: 'Perihal', type: 'text' },
         { code: 'MENIMBANG', label: 'Menimbang', type: 'textarea' },
@@ -67,6 +70,9 @@ window.JDIH_SEED = {
       template_version: 1,
       contoh_nomor: 'RSAN/KEB/2/K3RS/004',
       urutan: 2,
+      is_active: true,
+      allow_template: true,
+      layout_type: 'STANDARD',
       sections: [
         { code: 'LATAR_BELAKANG', label: 'Latar Belakang', type: 'textarea' },
         { code: 'TUJUAN', label: 'Tujuan', type: 'textarea' },
@@ -84,6 +90,9 @@ window.JDIH_SEED = {
       template_version: 1,
       contoh_nomor: 'RSAN/PKJ/3/LAB/002',
       urutan: 3,
+      is_active: true,
+      allow_template: true,
+      layout_type: 'STANDARD',
       sections: [
         { code: 'PENDAHULUAN', label: 'Pendahuluan', type: 'textarea' },
         { code: 'TUJUAN', label: 'Tujuan', type: 'textarea' },
@@ -101,6 +110,9 @@ window.JDIH_SEED = {
       template_version: 1,
       contoh_nomor: 'RSAN/PLY/4/IGD/001',
       urutan: 4,
+      is_active: true,
+      allow_template: true,
+      layout_type: 'STANDARD',
       sections: [
         { code: 'TUJUAN', label: 'Tujuan', type: 'textarea' },
         { code: 'CAKUPAN_SASARAN', label: 'Cakupan dan Sasaran Layanan', type: 'textarea' },
@@ -118,6 +130,9 @@ window.JDIH_SEED = {
       template_version: 3,
       contoh_nomor: 'RSAN/SPO/5/DTO/007',
       urutan: 5,
+      is_active: true,
+      allow_template: true,
+      layout_type: 'SPO',
       sections: [
         { code: 'PENGERTIAN', label: 'Pengertian', type: 'textarea' },
         { code: 'TUJUAN', label: 'Tujuan', type: 'textarea' },

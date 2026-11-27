@@ -11,8 +11,10 @@ import {
   getCurrentUser,
   getMyUnitIds,
   getPrimaryPublishedVersion,
+  getSortedCategories,
   getUnit,
   isAnyKoordinator,
+  isCategoryActive,
 } from '@/lib/domain';
 import { formatDateID } from '@/lib/format';
 
@@ -115,10 +117,20 @@ export function DocumentListView({ myUnitsOnly = false }) {
     ? (myUnits.length ? myUnits.map((u) => u.nama).join(' · ') : 'Belum ada unit kerja yang terhubung ke akun Anda.')
     : 'Regulasi terbit dari seluruh unit RS AN-NISA.';
 
-  const categoryCounts = state.categories.map(({ id, label }) => ({
-    label,
-    count: publishedDocs.filter(({ doc }) => doc.category_id === id).length,
-  }));
+  const sortedCategories = useMemo(() => getSortedCategories(state.categories), [state.categories]);
+
+  const categoryCounts = sortedCategories
+    .map((c) => ({
+      cat: c,
+      label: c.label,
+      count: publishedDocs.filter(({ doc }) => doc.category_id === c.id).length,
+    }))
+    .filter(({ cat, count }) => isCategoryActive(cat) || count > 0)
+    .map(({ label, count }) => ({ label, count }));
+
+  const filterCategoryOptions = sortedCategories.filter(
+    (c) => isCategoryActive(c) || publishedDocs.some(({ doc }) => doc.category_id === c.id)
+  );
 
   function resetFilters() {
     setFilters((prev) => ({
@@ -191,7 +203,10 @@ export function DocumentListView({ myUnitsOnly = false }) {
               value={f.categoryId}
               options={[
                 { value: '', label: 'Semua jenis' },
-                ...state.categories.map((c) => ({ value: c.id, label: c.label })),
+                ...filterCategoryOptions.map((c) => ({
+                  value: c.id,
+                  label: isCategoryActive(c) ? c.label : `${c.label} (Nonaktif)`,
+                })),
               ]}
               onChange={(val) => setFilters((prev) => ({ ...prev, categoryId: val, page: 1 }))}
             />

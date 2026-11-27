@@ -100,11 +100,15 @@ function renderSpoParagraphLines(keyPrefix, rawLines) {
   return nodes;
 }
 
-function renderSpoDocument(version, logo) {
+function renderSpoDocument(version, logo, category = null) {
   const sections = version.sections || {};
   const approver = sections.PEJABAT_PENETAP?.trim() || 'Dr. dr. Ediansyah, MARS';
   const issuedDate = formatDateLong(version.tgl_berlaku || version.tgl_dokumen);
   const templateList = version.template_sections || [];
+  const isLegacySpo = category?.kode === 'SPO' || category?.id === 'cat-spo';
+  const typeLabel = isLegacySpo
+    ? 'STANDAR\nPROSEDUR\nOPERASIONAL'
+    : String(category?.label || 'DOKUMEN').toUpperCase();
 
   const bodyRows = templateList.flatMap(({ code, label }) => {
     const rowLabel = SPO_SECTION_LABELS[code] || label.replace(/\s*\((?:dapat diurutkan|bila ada)\)\s*$/i, '').toUpperCase();
@@ -189,7 +193,7 @@ function renderSpoDocument(version, logo) {
         ),
         h(View, { style: styles.spoKopBottom },
           h(View, { style: styles.spoTypeCell },
-            h(Text, { style: styles.spoTypeText }, 'STANDAR\nPROSEDUR\nOPERASIONAL'),
+            h(Text, { style: styles.spoTypeText }, typeLabel),
           ),
           h(View, { style: styles.spoDateCell },
             h(Text, { style: styles.spoMetaText }, 'Tanggal Terbit\n' + issuedDate),
@@ -212,9 +216,9 @@ function renderSpoDocument(version, logo) {
 
 export async function renderDocumentPdf(version, doc, unit, category = null) {
   const logo = 'data:image/png;base64,' + (await readFile(logoFile)).toString('base64');
-  const isSpo = category?.kode === 'SPO' || doc?.category_id === 'cat-spo';
+  const isSpo = category?.layout_type === 'SPO' || (!category?.layout_type && (category?.kode === 'SPO' || doc?.category_id === 'cat-spo'));
   if (isSpo) {
-    return Readable.toWeb(await renderToStream(renderSpoDocument(version, logo)));
+    return Readable.toWeb(await renderToStream(renderSpoDocument(version, logo, category)));
   }
 
   const content = (version.template_sections || []).flatMap(({ code, label }) => {
